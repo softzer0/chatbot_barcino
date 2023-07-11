@@ -1,0 +1,11 @@
+[
+{
+    "model": "main.document",
+    "pk": 1,
+    "fields": {
+        "name": "Example Document",
+        "doc_file": "documents/example.csv",
+        "doc_type": "csv"
+    }
+}
+]

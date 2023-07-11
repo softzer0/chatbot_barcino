@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <title>Chat with Genie</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+    <style>
+        body, html {
+            height: 100%;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+        }
+        .container {
+            flex-grow: 1;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            padding: 10px;
+        }
+        #messages {
+            flex-grow: 1;
+            overflow: auto;
+            padding: 0 15px;
+            margin-bottom: 15px;
+        }
+        #messages .message {
+            margin-bottom: 15px;
+        }
+        #messages .bot {
+            text-align: left;
+        }
+        #messages .bot .bubble {
+            display: inline-block;
+            background-color: #e6e6ea;
+            border-radius: 20px;
+            padding: 10px 20px;
+        }
+        #messages .user {
+            text-align: right;
+        }
+        #messages .user .bubble {
+            display: inline-block;
+            background-color: #0b93f6;
+            color: white;
+            border-radius: 20px;
+            padding: 10px 20px;
+        }
+        #user-input {
+            width: 100%;
+            padding: 10px;
+            box-sizing: border-box;
+        }
+        .spinner {
+            display: inline-block;
+            width: 24px;
+            height: 24px;
+            border: 4px solid rgba(0, 0, 0, .1);
+            border-left-color: #0b93f6;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2 class="text-center py-3">Chat with Genie</h2>
+        <div id="messages" class="mt-5"></div>
+        <div id="user-input" class="input-group">
+            <input id="m" type="text" class="form-control" placeholder="Type your message" autocomplete="off" />
+            <button class="btn btn-primary input-group-append">
+                <i class="fas fa-paper-plane"></i>
+            </button>
+        </div>
+    </div>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script>
+        $(function () {
+            var socket = new WebSocket('ws://localhost:8000/ws/chat/');
+
+            function sendMessage() {
+                var message = $('#m').val().trim();
+                if (message.length === 0) {
+                    return;
+                }
+                appendMessage(message, 'user');
+                appendMessage("", 'bot'); // Create a bot message with spinner
+                socket.send(JSON.stringify({message: message}));
+                $('#m').val('');
+
+                // Disable the button
+                $('button').prop('disabled', true);
+            }
+
+            function appendMessage(text, sender) {
+                var messageElement = $('<div>').addClass('message ' + sender);
+                var bubbleElement = $('<div>').addClass('bubble').text(text);
+                if (sender === 'bot') {
+                    var spinnerElement = $('<div>').addClass('spinner');
+                    bubbleElement.append(spinnerElement);
+                }
+                messageElement.append(bubbleElement);
+                $('#messages').append(messageElement);
+                $('#messages').scrollTop($('#messages')[0].scrollHeight);
+            }
+
+            $('#m').on('keydown', function (e) {
+                if (e.key === 'Enter' && !$('button').prop('disabled')) {
+                    e.preventDefault();
+                    sendMessage();
+                }
+            });
+
+            $('button').on('click', sendMessage);
+
+            socket.onmessage = function(event) {
+                var data = JSON.parse(event.data);
+                var message = data.message;
+                $('#messages .bot:last .bubble').html(message.replaceAll('\n', '<br>'));
+
+                // Enable the button
+                $('button').prop('disabled', false);
+            };
+
+            socket.onclose = function(event) {
+                console.log('Socket closed connection: ', event);
+            };
+
+            socket.onerror = function(error) {
+                console.log('Socket error: ', error);
+            };
+        });
+    </script>
+</body>
+</html>
