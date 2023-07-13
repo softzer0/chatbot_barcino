@@ -11,4 +11,4 @@ RUN pip install --upgrade pip
 RUN pip install -r requirements.txt
 
 ENTRYPOINT ["/app/docker/entrypoint.sh"]
-CMD hypercorn ${ASGI_APPLICATION_PATH} --bind 0.0.0.0:8000
+CMD hypercorn ${ASGI_APPLICATION_PATH} --bind 0.0.0.0:8000 --reload

@@ -1,0 +1,221 @@
+{% extends "base_generic.html" %}
+
+{% block title %}Panel{% endblock %}
+
+{% block extra_styles %}
+<style>
+    html, body {
+        height: 100%;
+        margin: 0;
+        padding: 0;
+    }
+
+    body {
+        font-family: Arial, sans-serif;
+        background-color: #f4f6f8;
+    }
+
+    .container {
+        margin-top: 20px;
+    }
+
+    .panel-heading {
+        color: white;
+        background-color: #007bff;
+        border-color: #007bff;
+        padding: 15px;
+    }
+
+    .panel-body {
+        border: 1px solid #007bff;
+        border-top: none;
+        border-radius: 0 0 4px 4px;
+        box-shadow: 0 2px 5px rgba(0,0,0,.26);
+        background-color: white;
+        padding: 15px;
+        overflow-y: auto;
+    }
+
+    .chat-bubble {
+        padding: 10px;
+        border-radius: 20px;
+        margin-bottom: 10px;
+        word-break: break-word;
+    }
+
+    .question {
+        display: inline-block;
+        background-color: #a9a9a9;
+        border-radius: 12px;
+        padding: 10px;
+        margin-bottom: 5px;
+        word-break: break-all;
+    }
+
+    .answer {
+        display: inline-block;
+        background-color: #0e86fe;
+        color: white;
+        border-radius: 12px;
+        padding: 10px;
+        margin-bottom: 5px;
+    }
+
+    .list-group-item {
+        cursor: pointer;
+        margin-bottom: 10px;
+    }
+
+    .list-group-item.active {
+        background-color: #007bff;
+        border-color: #007bff;
+        color: white;
+    }
+
+    .session-info {
+        border: 1px solid #007bff;
+        border-radius: 4px;
+        box-shadow: 0 2px 5px rgba(0,0,0,.26);
+        background-color: white;
+        margin-top: 20px;
+        padding: 15px;
+    }
+
+    .badge {
+        white-space: break-spaces;
+        text-align: left;
+    }
+
+    .new-message {
+        background-color: #ffd700;
+    }
+
+    .h-100 {
+        height: 100vh !important; /* Full height of the viewport */
+    }
+
+    .flex-grow-1 {
+        flex-grow: 1; /* Takes up remaining space in the container */
+        overflow: hidden; /* Ensures the row doesn't grow beyond the container */
+    }
+
+    .panel-wrapper {
+        height: 100%; /* Full height of the parent */
+        overflow-y: auto; /* Show scrollbar when content exceeds the height */
+        display: flex;
+        flex-direction: column;
+    }
+
+    .panel-content {
+        flex: 1 1 auto; /* Grow and shrink as needed, auto basis */
+        overflow-y: auto; /* Show scrollbar when content exceeds the height */
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid h-100 d-flex flex-column">
+    <div class="row flex-grow-1 overflow-hidden">
+        <div class="col-md-4 panel-wrapper">
+            <h5>Chat Sessions</h5>
+            <div class="list-group panel-content" id="session-list"></div>
+        </div>
+        <div class="col-md-4 panel-wrapper">
+            <h5>Chat Session</h5>
+            <div id="chat-session" class="panel-body panel-content"></div>
+        </div>
+        <div class="col-md-4 panel-wrapper">
+            <h5>Information</h5>
+            <div id="info-pane" class="panel-content">
+                Name: <br/>
+                Contact number: <br/>
+                Arrangement: <br/>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    $(function () {
+        var socket = new WebSocket('ws://localhost:8000/ws/panel/');
+        var activeSession = null;
+
+        socket.onopen = function(event) {
+            socket.send(JSON.stringify({ command: 'fetch_sessions' }));
+        };
+
+        function appendSession(session) {
+            if (!$(`#session-${session.id}`).length) {
+                let activeClass = activeSession === session.id ? 'active' : '';
+                $('#session-list').append(`<a href="#" id="session-${session.id}" class="list-group-item list-group-item-action ${activeClass}" onclick="fetchMessages(${session.id})">Session ${session.id}</a>`);
+            }
+        }
+
+        function appendMessage(message) {
+            if (!$(`#message-${message.id}`).length) {
+                $('#chat-session').append(`
+                    <div id="message-${message.id}" class="card">
+                        <div class="card-body">
+                            <span class="badge question">${message.message}</span><br>
+                            <span class="badge answer">${message.response}</span>
+                        </div>
+                    </div>
+                `);
+                // Scroll to bottom when a new message is appended
+                $('#chat-session').scrollTop($('#chat-session')[0].scrollHeight);
+            }
+        }
+
+        socket.onmessage = function(event) {
+            var data = JSON.parse(event.data);
+
+            // handle incoming new sessions
+            if (data.command === 'new_session') {
+                appendSession(data.session);
+            }
+
+            // handle incoming new messages
+            else if (data.command === 'new_message') {
+                var message = data.message;
+                if (message.session_id === activeSession) {
+                    appendMessage(message);
+                } else {
+                    $(`#session-${message.session_id}`).addClass('new-message');
+                }
+            }
+
+            // handle fetched sessions
+            else if (data.command === 'fetch_sessions') {
+                data.sessions.forEach(appendSession);
+            }
+
+            // handle fetched messages
+            else if (data.command === 'fetch_messages') {
+                data.messages.forEach(appendMessage);
+            } else {
+                console.error("Unrecognized command:", data.command);
+            }
+        };
+
+        socket.onclose = function(event) {
+            console.log('Socket closed connection: ', event);
+        };
+
+        socket.onerror = function(error) {
+            console.log('Socket error: ', error);
+        };
+
+        window.fetchMessages = function(sessionId) {
+            activeSession = sessionId;
+            $('.list-group-item').removeClass('active');
+            $(`#session-${sessionId}`).addClass('active');
+            $(`#session-${sessionId}`).removeClass('new-message');
+            // Clear the chat session before loading new messages
+            $('#chat-session').html('');
+            socket.send(JSON.stringify({ command: 'fetch_messages', session_id: sessionId }));
+        };
+    });
+</script>
+{% endblock %}

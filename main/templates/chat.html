@@ -1,11 +1,8 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-    <title>Chat with Genie</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+{% extends "base_generic.html" %}
+
+{% block title %}Chat{% endblock %}
+
+{% block extra_styles %}
     <style>
         body, html {
             height: 100%;
@@ -68,22 +65,31 @@
             }
         }
     </style>
-</head>
-<body>
+{% endblock %}
+
+{% block content %}
     <div class="container">
         <h2 class="text-center py-3">Chat with Genie</h2>
         <div id="messages" class="mt-5"></div>
         <div id="user-input" class="input-group">
             <input id="m" type="text" class="form-control" placeholder="Type your message" autocomplete="off" />
-            <button class="btn btn-primary input-group-append">
+            <button disabled class="btn btn-primary input-group-append">
                 <i class="fas fa-paper-plane"></i>
             </button>
         </div>
     </div>
-    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+{% endblock %}
+
+{% block extra_scripts %}
     <script>
         $(function () {
             var socket = new WebSocket('ws://localhost:8000/ws/chat/');
+
+            socket.onopen = function(event) {
+                // Enable the button when connection is established
+                $('button').prop('disabled', false);
+                console.log('Socket opened connection: ', event);
+            };
 
             function sendMessage() {
                 var message = $('#m').val().trim();
@@ -138,5 +144,4 @@
             };
         });
     </script>
-</body>
-</html>
+{% endblock %}

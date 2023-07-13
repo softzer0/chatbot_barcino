@@ -37,7 +37,13 @@ class Document(models.Model):
         else:
             self.LOADER_MAP[self.doc_type](self.doc_file.path)
 
+
+class ChatSession(models.Model):
+    sid = models.CharField(max_length=50)
+
+
 class ChatMessage(models.Model):
+    session = models.ForeignKey(ChatSession, related_name='messages', on_delete=models.CASCADE)
     message = models.TextField()
     response = models.TextField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
