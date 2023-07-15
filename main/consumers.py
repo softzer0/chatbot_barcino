@@ -38,6 +38,10 @@ class ChatConsumer(AsyncWebsocketConsumer):
         chat_message = ChatMessage(session=session, message=message, response=response)
         chat_message.save()
 
+        # Update the session's last_message field
+        session.last_message = chat_message
+        session.save()
+
 
 class PanelConsumer(AsyncWebsocketConsumer):
     async def connect(self):

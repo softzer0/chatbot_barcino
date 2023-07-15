@@ -15,17 +15,6 @@
         background-color: #f4f6f8;
     }
 
-    .container {
-        margin-top: 20px;
-    }
-
-    .panel-heading {
-        color: white;
-        background-color: #007bff;
-        border-color: #007bff;
-        padding: 15px;
-    }
-
     .panel-body {
         border: 1px solid #007bff;
         border-top: none;
@@ -34,13 +23,6 @@
         background-color: white;
         padding: 15px;
         overflow-y: auto;
-    }
-
-    .chat-bubble {
-        padding: 10px;
-        border-radius: 20px;
-        margin-bottom: 10px;
-        word-break: break-word;
     }
 
     .question {
@@ -81,6 +63,12 @@
         padding: 15px;
     }
 
+    .truncate {
+        line-clamp: 2;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
     .badge {
         white-space: break-spaces;
         text-align: left;
@@ -91,24 +79,24 @@
     }
 
     .h-100 {
-        height: 100vh !important; /* Full height of the viewport */
+        height: 100vh !important;
     }
 
     .flex-grow-1 {
-        flex-grow: 1; /* Takes up remaining space in the container */
-        overflow: hidden; /* Ensures the row doesn't grow beyond the container */
+        flex-grow: 1;
+        overflow: hidden;
     }
 
     .panel-wrapper {
-        height: 100%; /* Full height of the parent */
-        overflow-y: auto; /* Show scrollbar when content exceeds the height */
+        height: 100%;
+        overflow-y: auto;
         display: flex;
         flex-direction: column;
     }
 
     .panel-content {
-        flex: 1 1 auto; /* Grow and shrink as needed, auto basis */
-        overflow-y: auto; /* Show scrollbar when content exceeds the height */
+        flex: 1 1 auto;
+        overflow-y: auto;
     }
 </style>
 {% endblock %}
@@ -134,6 +122,19 @@
         </div>
     </div>
 </div>
+
+<template id="session-template">
+    <a href="#" class="list-group-item list-group-item-action truncate"></a>
+</template>
+
+<template id="message-template">
+    <div class="card">
+        <div class="card-body">
+            <span class="badge question"></span><br>
+            <span class="badge answer"></span>
+        </div>
+    </div>
+</template>
 {% endblock %}
 
 {% block extra_scripts %}
@@ -141,30 +142,68 @@
     $(function () {
         var socket = new WebSocket('ws://localhost:8000/ws/panel/');
         var activeSession = null;
+        var pendingSessionMessages = {};
 
         socket.onopen = function(event) {
             socket.send(JSON.stringify({ command: 'fetch_sessions' }));
         };
 
-        function appendSession(session) {
-            if (!$(`#session-${session.id}`).length) {
-                let activeClass = activeSession === session.id ? 'active' : '';
-                $('#session-list').append(`<a href="#" id="session-${session.id}" class="list-group-item list-group-item-action ${activeClass}" onclick="fetchMessages(${session.id})">Session ${session.id}</a>`);
+        function appendElement(id, template, parent, settings) {
+            if (!$(`#${id}`).length) {
+                let templateElement = document.querySelector(`#${template}`);
+                let clone = templateElement.content.cloneNode(true);
+                settings(clone);
+                $(`#${parent}`).append(clone);
             }
         }
 
+        function putSessionName(link, session_id, message) {
+            link.textContent = `#${session_id} - ${message}`;
+        }
+
+        function appendSession(session) {
+            appendElement(`session-${session.id}`, 'session-template', 'session-list', function(clone) {
+                let link = clone.querySelector('a');
+                link.id = `session-${session.id}`;
+                link.onclick = function() { fetchMessages(session.id); };
+                if (activeSession === session.id) {
+                    link.classList.add('active');
+                }
+
+                // If there is a newer pending message for this session, use it
+                if (pendingSessionMessages[session.id]) {
+                    session.last_message = pendingSessionMessages[session.id].message;
+                    delete pendingSessionMessages[session.id];
+                }
+
+                putSessionName(link, session.id, session.last_message);
+            });
+        }
+
         function appendMessage(message) {
-            if (!$(`#message-${message.id}`).length) {
-                $('#chat-session').append(`
-                    <div id="message-${message.id}" class="card">
-                        <div class="card-body">
-                            <span class="badge question">${message.message}</span><br>
-                            <span class="badge answer">${message.response}</span>
-                        </div>
-                    </div>
-                `);
+            // Store the message in the pendingSessionMessages map, overwriting any previous message
+            pendingSessionMessages[message.session_id] = message;
+
+            // If the session for this message does not exist yet, return
+            if (!$(`#session-${message.session_id}`).length) {
+                return;
+            }
+
+            appendElement(`message-${message.id}`, 'message-template', 'chat-session', function(clone) {
+                let card = clone.querySelector('.card');
+                card.id = `message-${message.id}`;
+                let question = card.querySelector('.question');
+                question.textContent = message.message;
+                let answer = card.querySelector('.answer');
+                answer.textContent = message.response;
+
                 // Scroll to bottom when a new message is appended
                 $('#chat-session').scrollTop($('#chat-session')[0].scrollHeight);
+            });
+
+            if ($(`#session-${message.session_id}`).length) {
+                let sessionLink = $(`#session-${message.session_id}`);
+                putSessionName(sessionLink, message.message);
             }
         }
 
@@ -179,10 +218,18 @@
             // handle incoming new messages
             else if (data.command === 'new_message') {
                 var message = data.message;
+
+                // Always update pending message and session name with new message
+                pendingSessionMessages[message.session_id] = message;
+                let sessionLink = $(`#session-${message.session_id}`);
+                if (sessionLink.length) {
+                    putSessionName(sessionLink[0], message.session_id, message.message);
+                    sessionLink.addClass('new-message');
+                }
+
+                // Append message to chat only if it's for the active session
                 if (message.session_id === activeSession) {
                     appendMessage(message);
-                } else {
-                    $(`#session-${message.session_id}`).addClass('new-message');
                 }
             }
 
