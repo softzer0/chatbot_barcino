@@ -2,6 +2,7 @@ import json
 
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
+from django.db.models import F
 
 from chatbot.utils import DateTimeEncoder
 from .genie import Genie
@@ -70,10 +71,42 @@ class PanelConsumer(AsyncWebsocketConsumer):
                 'messages': messages
             }, cls=DateTimeEncoder))
 
+        elif command == 'delete_session':
+            session_id = text_data_json['session_id']
+            await self.delete_session(session_id)
+            await self.send(text_data=json.dumps({
+                'command': 'deleted_session',
+                'session_id': session_id
+            }))
+
+        elif command == 'rename_session':
+            session_id = text_data_json['session_id']
+            new_name = text_data_json['new_name']
+            session = await self.rename_session(session_id, new_name)
+            await self.send(text_data=json.dumps({
+                'command': 'renamed_session',
+                'session_id': session_id,
+                'last_message_text': session.last_message.message,
+                'new_name': new_name
+            }))
+
+    @database_sync_to_async
+    def delete_session(self, session_id):
+        from .models import ChatSession
+        ChatSession.objects.get(id=session_id).delete()
+
+    @database_sync_to_async
+    def rename_session(self, session_id, new_name):
+        from .models import ChatSession
+        session = ChatSession.objects.get(id=session_id)
+        session.name = new_name
+        session.save()
+        return session
+
     @database_sync_to_async
     def get_sessions(self):
         from .models import ChatSession
-        return list(ChatSession.objects.all().values())
+        return list(ChatSession.objects.all().annotate(last_message_text=F('last_message__message')).values())
 
     @database_sync_to_async
     def get_messages(self, session_id):

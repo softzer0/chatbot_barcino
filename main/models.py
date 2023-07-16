@@ -40,6 +40,7 @@ class Document(models.Model):
 
 class ChatSession(models.Model):
     sid = models.CharField(max_length=50)
+    name = models.CharField(max_length=255, null=True, blank=True)
     last_message = models.OneToOneField('ChatMessage', related_name='+', on_delete=models.SET_NULL, null=True, blank=True)
 
 class ChatMessage(models.Model):

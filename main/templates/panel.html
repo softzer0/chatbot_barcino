@@ -98,6 +98,28 @@
         flex: 1 1 auto;
         overflow-y: auto;
     }
+
+    .session-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .rename-delete-template {
+        display: flex;
+        align-items: center;
+    }
+
+    .rename-delete-template button,
+    .rename-delete-template input {
+        margin-left: 5px;
+    }
+
+    /* Adjustments for multi-line content */
+    .list-group-item.list-group-item-action.truncate {
+        flex-grow: 1;
+        margin-right: 5px;
+    }
 </style>
 {% endblock %}
 
@@ -124,7 +146,16 @@
 </div>
 
 <template id="session-template">
-    <a href="#" class="list-group-item list-group-item-action truncate"></a>
+    <div class="session-item">
+        <a href="#" class="list-group-item list-group-item-action truncate"></a>
+        <input class="edit-name" style="display: none;" type="text">
+        <div id="rename-delete-template" class="rename-delete-template">
+            <button class="btn btn-sm btn-light rename-session-button"><i class="fas fa-edit"></i></button>
+            <button class="btn btn-sm btn-light save-name-button" style="display: none;"><i class="fas fa-save"></i></button>
+            <button class="btn btn-sm btn-light cancel-rename-button" style="display: none;"><i class="fas fa-times"></i></button>
+            <button class="btn btn-sm btn-light delete-session-button"><i class="fas fa-trash"></i></button>
+        </div>
+    </div>
 </template>
 
 <template id="message-template">
@@ -148,20 +179,39 @@
             socket.send(JSON.stringify({ command: 'fetch_sessions' }));
         };
 
-        function appendElement(id, template, parent, settings) {
-            if (!$(`#${id}`).length) {
-                let templateElement = document.querySelector(`#${template}`);
-                let clone = templateElement.content.cloneNode(true);
-                settings(clone);
-                $(`#${parent}`).append(clone);
+        function appendElement(id, templateId, parentId, callback, prepend = false) {
+            // Check if element already exists
+            let existing = document.getElementById(id);
+            if (existing) {
+                return existing;
             }
+
+            // Create new element from template
+            let template = document.getElementById(templateId);
+            let clone = document.importNode(template.content, true);
+            clone.querySelector('.session-item').id = id;
+
+            // Append to parent
+            let parent = document.getElementById(parentId);
+            if (prepend) {
+                parent.prepend(clone);
+            } else {
+                parent.appendChild(clone);
+            }
+
+            // Execute callback on newly created element
+            if (callback) {
+                callback(document.getElementById(id));
+            }
+
+            return document.getElementById(id);
         }
 
-        function putSessionName(link, session_id, message) {
-            link.textContent = `#${session_id} - ${message}`;
+        function putSessionName(link, session_id_name, message) {
+            link.textContent = `#${session_id_name} - ${message}`;
         }
 
-        function appendSession(session) {
+        function appendSession(session, prepend) {
             appendElement(`session-${session.id}`, 'session-template', 'session-list', function(clone) {
                 let link = clone.querySelector('a');
                 link.id = `session-${session.id}`;
@@ -172,23 +222,57 @@
 
                 // If there is a newer pending message for this session, use it
                 if (pendingSessionMessages[session.id]) {
-                    session.last_message = pendingSessionMessages[session.id].message;
+                    session.last_message_text = pendingSessionMessages[session.id].message;
                     delete pendingSessionMessages[session.id];
                 }
 
-                putSessionName(link, session.id, session.last_message);
-            });
+                putSessionName(link, session.name || session.id, session.last_message_text);
+
+                // Add rename and delete buttons for each session
+                clone.querySelector('.rename-session-button').onclick = function() {
+                    $(clone).find('.edit-name').show();
+                    $(clone).find('.name').hide();
+                    $(clone).find('.edit-name').val(session.name);
+                    $(clone).find('.rename-session-button').hide();
+                    $(clone).find('.delete-session-button').hide();
+                    $(clone).find('.save-name-button').show();
+                    $(clone).find('.cancel-rename-button').show();
+                };
+                clone.querySelector('.cancel-rename-button').onclick = function() {
+                    $(clone).find('.edit-name').hide();
+                    $(clone).find('.name').show();
+                    $(clone).find('.rename-session-button').show();
+                    $(clone).find('.delete-session-button').show();
+                    $(clone).find('.save-name-button').hide();
+                    $(clone).find('.cancel-rename-button').hide();
+                };
+                function disableAllButtons() {
+                    $(clone).find('.edit-name').prop('disabled', true);
+                    $(clone).find('.save-name-button').prop('disabled', true);
+                    $(clone).find('.rename-session-button').prop('disabled', true);
+                    $(clone).find('.delete-session-button').prop('disabled', true);
+                    $(clone).find('.cancel-rename-button').prop('disabled', true);
+                }
+                clone.querySelector('.save-name-button').onclick = function() {
+                    var newName = $(clone).find('.edit-name').val();
+                    disableAllButtons();
+                    socket.send(JSON.stringify({
+                        command: 'rename_session',
+                        session_id: session.id,
+                        new_name: newName
+                    }));
+                };
+                clone.querySelector('.delete-session-button').onclick = function() {
+                    disableAllButtons();
+                    socket.send(JSON.stringify({
+                        command: 'delete_session',
+                        session_id: session.id
+                    }));
+                };
+            }, prepend);
         }
 
         function appendMessage(message) {
-            // Store the message in the pendingSessionMessages map, overwriting any previous message
-            pendingSessionMessages[message.session_id] = message;
-
-            // If the session for this message does not exist yet, return
-            if (!$(`#session-${message.session_id}`).length) {
-                return;
-            }
-
             appendElement(`message-${message.id}`, 'message-template', 'chat-session', function(clone) {
                 let card = clone.querySelector('.card');
                 card.id = `message-${message.id}`;
@@ -200,11 +284,6 @@
                 // Scroll to bottom when a new message is appended
                 $('#chat-session').scrollTop($('#chat-session')[0].scrollHeight);
             });
-
-            if ($(`#session-${message.session_id}`).length) {
-                let sessionLink = $(`#session-${message.session_id}`);
-                putSessionName(sessionLink, message.message);
-            }
         }
 
         socket.onmessage = function(event) {
@@ -212,19 +291,19 @@
 
             // handle incoming new sessions
             if (data.command === 'new_session') {
-                appendSession(data.session);
+                appendSession(data.session, true);
             }
 
             // handle incoming new messages
             else if (data.command === 'new_message') {
                 var message = data.message;
 
-                // Always update pending message and session name with new message
-                pendingSessionMessages[message.session_id] = message;
                 let sessionLink = $(`#session-${message.session_id}`);
                 if (sessionLink.length) {
-                    putSessionName(sessionLink[0], message.session_id, message.message);
+                    putSessionName(sessionLink[0], message.session_name || message.session_id, message.message);
                     sessionLink.addClass('new-message');
+                } else {
+                    pendingSessionMessages[message.session_id] = message;
                 }
 
                 // Append message to chat only if it's for the active session
@@ -241,10 +320,23 @@
             // handle fetched messages
             else if (data.command === 'fetch_messages') {
                 data.messages.forEach(appendMessage);
+
+            } else if (data.command == 'deleted_session') {
+                $(`#session-${data.session_id}`).parent().remove().remove();
+
+            } else if (data.command == 'renamed_session') {
+                var sessionDiv = $(`#session-${data.session_id}`).parent();
+                sessionDiv.find('.name').text(`${data.new_name} - ${data.last_message_text}`);
+                sessionDiv.find('.edit-name').hide().prop('disabled', false);
+                sessionDiv.find('.rename-session-button').show().prop('disabled', false);
+                sessionDiv.find('.delete-session-button').show().prop('disabled', false);
+                sessionDiv.find('.save-name-button').hide().prop('disabled', false);
+                sessionDiv.find('.cancel-rename-button').hide().prop('disabled', false);
+
             } else {
-                console.error("Unrecognized command:", data.command);
+                console.error('Unrecognized command:', data.command);
             }
-        };
+        }
 
         socket.onclose = function(event) {
             console.log('Socket closed connection: ', event);

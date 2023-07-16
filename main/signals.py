@@ -18,6 +18,7 @@ def new_message(sender, instance, created, **kwargs):
                     'message': instance.message,
                     'response': instance.response,
                     'session_id': instance.session_id,
+                    'session_name': instance.session.name
                 },
             }
         )
