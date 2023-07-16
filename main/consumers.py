@@ -26,11 +26,12 @@ class ChatConsumer(AsyncWebsocketConsumer):
             await database_sync_to_async(self.scope["session"].save)()
             self.session = await database_sync_to_async(ChatSession.objects.create)(sid=self.scope['session'].session_key)
 
-        response = self.genie.ask(message)
-        await self.store_message(self.session, message, response)
-        await self.send(text_data=json.dumps({
-            'message': response
-        }))
+        if not self.session.is_human_intercepted:
+            response = self.genie.ask(message)
+            await self.store_message(self.session, message, response)
+            await self.send(text_data=json.dumps({
+                'message': response
+            }))
 
     @staticmethod
     @database_sync_to_async
@@ -86,9 +87,35 @@ class PanelConsumer(AsyncWebsocketConsumer):
             await self.send(text_data=json.dumps({
                 'command': 'renamed_session',
                 'session_id': session_id,
-                'last_message_text': session.last_message.message,
+                'last_message_text': await self.get_last_message(session),
                 'new_name': new_name
             }))
+
+        elif command == 'intercept_session':
+            session_id = text_data_json['session_id']
+            await self.intercept_session(session_id)
+            username = await self.get_username()
+            await self.send(text_data=json.dumps({
+                'command': 'intercepted_session',
+                'session_id': session_id,
+                'intercepted_by': username
+            }))
+
+    @database_sync_to_async
+    def get_username(self):
+        return self.scope['user'].username
+
+    @database_sync_to_async
+    def intercept_session(self, session_id):
+        from .models import ChatSession
+        session = ChatSession.objects.get(id=session_id)
+        session.is_human_intercepted = True
+        session.human_agent = self.scope['user']
+        session.save()
+
+    @database_sync_to_async
+    def get_last_message(self, session):
+        return session.last_message.message
 
     @database_sync_to_async
     def delete_session(self, session_id):

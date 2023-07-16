@@ -1,3 +1,4 @@
+from django.contrib.auth.models import User
 from django.db import models
 from langchain.document_loaders import (
     UnstructuredCSVLoader,
@@ -42,9 +43,17 @@ class ChatSession(models.Model):
     sid = models.CharField(max_length=50)
     name = models.CharField(max_length=255, null=True, blank=True)
     last_message = models.OneToOneField('ChatMessage', related_name='+', on_delete=models.SET_NULL, null=True, blank=True)
+    is_human_intercepted = models.BooleanField(default=False)
+    human_agent = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL)
 
 class ChatMessage(models.Model):
     session = models.ForeignKey(ChatSession, related_name='messages', on_delete=models.CASCADE)
     message = models.TextField()
     response = models.TextField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+class VisitorInfo(models.Model):
+    name = models.CharField(max_length=255, null=True, blank=True)
+    contact_phone = models.CharField(max_length=20, null=True, blank=True)
+    arrangement = models.CharField(max_length=255, null=True, blank=True)
+    session = models.OneToOneField(ChatSession, on_delete=models.CASCADE, related_name='visitor_info')
