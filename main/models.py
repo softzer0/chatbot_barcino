@@ -42,6 +42,8 @@ class Document(models.Model):
 class ChatSession(models.Model):
     sid = models.CharField(max_length=50)
     name = models.CharField(max_length=255, null=True, blank=True)
+    is_terminated = models.BooleanField(default=False)
+    info_provided = models.BooleanField(default=False)
     last_message = models.OneToOneField('ChatMessage', related_name='+', on_delete=models.SET_NULL, null=True, blank=True)
     is_human_intercepted = models.BooleanField(default=False)
     human_agent = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL)

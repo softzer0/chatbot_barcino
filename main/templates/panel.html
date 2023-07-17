@@ -120,6 +120,10 @@
         flex-grow: 1;
         margin-right: 5px;
     }
+
+    .terminated {
+        background-color: #f8d7da;
+    }
 </style>
 {% endblock %}
 
@@ -133,13 +137,17 @@
         <div class="col-md-4 panel-wrapper">
             <h5>Chat Session</h5>
             <div id="chat-session" class="panel-body panel-content"></div>
+            <div id="intercept-panel" class="panel-body panel-content mt-2 d-none">
+                <input type="text" id="intercept-message" class="form-control" placeholder="Type your message...">
+                <button id="intercept-button" class="btn btn-primary mt-2">Send Message</button>
+            </div>
         </div>
         <div class="col-md-4 panel-wrapper">
             <h5>Information</h5>
             <div id="info-pane" class="panel-content">
-                Name: <br/>
-                Contact number: <br/>
-                Arrangement: <br/>
+                Name: <span id="name"></span></p><br/>
+                Contact phone: <span id="contact-phone"></span></p><br/>
+                Arrangement: <span id="arrangement"></span></p><br/>
             </div>
         </div>
     </div>
@@ -148,8 +156,8 @@
 <template id="session-template">
     <div class="session-item">
         <a href="#" class="name list-group-item list-group-item-action truncate"></a>
-        <input class="edit-name" style="display: none;" type="text">
-        <div id="rename-delete-template" class="rename-delete-template">
+        <input class="mb-2 edit-name" style="display: none;" type="text">
+        <div id="rename-delete-template" class="mb-2 rename-delete-template">
             <button class="btn btn-sm btn-light rename-session-button"><i class="fas fa-edit"></i></button>
             <button class="btn btn-sm btn-light save-name-button" style="display: none;"><i class="fas fa-save"></i></button>
             <button class="btn btn-sm btn-light cancel-rename-button" style="display: none;"><i class="fas fa-times"></i></button>
@@ -203,6 +211,10 @@
                 link.onclick = function() { fetchMessages(session.id); };
                 if (activeSession === session.id) {
                     link.classList.add('active');
+                }
+
+                if (session.terminated) {
+                    $(clone).find('.session-item').addClass('terminated');
                 }
 
                 if (pendingSessionMessages[session.id]) {
@@ -285,7 +297,7 @@
             else if (data.command === 'new_message') {
                 var message = data.message;
 
-                let sessionLink = $(`#session-${message.session_id}`);
+                let sessionLink = $(`#session-${message.session_id} .name`);
                 if (sessionLink.length) {
                     putSessionName(sessionLink[0], message.session_name || message.session_id, message.message);
                     sessionLink.addClass('new-message');
@@ -313,12 +325,19 @@
 
             } else if (data.command === 'renamed_session') {
                 var sessionDiv = $(`#session-${data.session_id}`);
-                sessionDiv.find('.name').text(`${data.new_name} - ${data.last_message_text}`);
+                putSessionName(sessionDiv.find('.name'), data.new_name, data.last_message_text);
                 sessionDiv.find('.edit-name').hide().prop('disabled', false);
                 sessionDiv.find('.rename-session-button').show().prop('disabled', false);
                 sessionDiv.find('.delete-session-button').show().prop('disabled', false);
                 sessionDiv.find('.save-name-button').hide().prop('disabled', false);
                 sessionDiv.find('.cancel-rename-button').hide().prop('disabled', false);
+
+            } else if (data.command === 'visitor_info' || data.command === 'update_visitor_info') {
+                if (activeSession === data.session_id) {
+                    $('#name').text(data.info.name);
+                    $('#contact-phone').text(data.info.contact_phone);
+                    $('#arrangement').text(data.info.arrangement);
+                }
 
             } else {
                 console.error('Unrecognized command:', data.command);
@@ -342,7 +361,37 @@
             // Clear the chat session before loading new messages
             $('#chat-session').html('');
             socket.send(JSON.stringify({ command: 'fetch_messages', session_id: sessionId }));
+            // Fetch the visitor info for the active session
+            socket.send(JSON.stringify({ command: 'fetch_visitor_info', session_id: sessionId }));
+            // Determine whether to show or hide the intercept panel
+            var sessionDiv = $(`#session-${sessionId}`);
+            if (!sessionDiv.hasClass('terminated')) {
+                $('#intercept-panel').removeClass('d-none');
+            } else {
+                $('#intercept-panel').addClass('d-none');
+            }
         };
+
+        // Handle the click event of the intercept button
+        $('#intercept-button').click(function() {
+            if (activeSession) {
+                var message = $('#intercept-message').val();
+                if (message.trim()) {
+                    // Disable the input and button temporarily
+                    $('#intercept-message').prop('disabled', true);
+                    $('#intercept-button').prop('disabled', true);
+
+                    socket.send(JSON.stringify({
+                        command: 'intercept_message',
+                        session_id: activeSession,
+                        message: message
+                    }));
+
+                    // Clear the input
+                    $('#intercept-message').val('');
+                }
+            }
+        });
     });
 </script>
 {% endblock %}

@@ -70,12 +70,52 @@
 {% block content %}
     <div class="container">
         <h2 class="text-center py-3">Chat with Genie</h2>
+
         <div id="messages" class="mt-5"></div>
+
         <div id="user-input" class="input-group">
             <input id="m" type="text" class="form-control" placeholder="Type your message" autocomplete="off" />
-            <button disabled class="btn btn-primary input-group-append">
+            <button id="send-button" disabled class="btn btn-primary input-group-append">
                 <i class="fas fa-paper-plane"></i>
             </button>
+
+            <!-- Button to Open the Modal -->
+            <button id="info-button" type="button" style="display: none;" class="btn btn-info input-group-append" data-bs-toggle="modal" data-bs-target="#visitorInfoModal">
+                Info
+            </button>
+        </div>
+    </div>
+
+    <!-- The Modal -->
+    <div class="modal fade" id="visitorInfoModal">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <!-- Modal Header -->
+                <div class="modal-header">
+                    <h4 class="modal-title">Share some information</h4>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+
+                <!-- Modal Body -->
+                <div class="modal-body">
+                    <form id="visitor-info-form">
+                        <div class="mb-3">
+                            <label for="name" class="form-label">Name</label>
+                            <input type="text" class="form-control" id="name">
+                        </div>
+                        <div class="mb-3">
+                            <label for="contact-phone" class="form-label">Contact phone</label>
+                            <input type="text" class="form-control" id="contact-phone">
+                        </div>
+                        <div class="mb-3">
+                            <label for="arrangement" class="form-label">Arrangement</label>
+                            <input type="text" class="form-control" id="arrangement">
+                        </div>
+                        <!-- Add more fields as needed -->
+                        <button type="submit" class="btn btn-primary">Submit</button>
+                    </form>
+                </div>
+            </div>
         </div>
     </div>
 {% endblock %}
@@ -84,10 +124,12 @@
     <script>
         $(function () {
             var socket = new WebSocket('ws://localhost:8000/ws/chat/');
+            var visitorInfo = {};
+            var isFirstResponse = true;
 
             socket.onopen = function(event) {
                 // Enable the button when connection is established
-                $('button').prop('disabled', false);
+                $('#send-button').prop('disabled', false);
                 console.log('Socket opened connection: ', event);
             };
 
@@ -98,11 +140,15 @@
                 }
                 appendMessage(message, 'user');
                 appendMessage("", 'bot'); // Create a bot message with spinner
-                socket.send(JSON.stringify({message: message}));
+                // Send message with the 'send_message' command
+                socket.send(JSON.stringify({
+                    'command': 'send_message',
+                    'message': message
+                }));
                 $('#m').val('');
 
                 // Disable the button
-                $('button').prop('disabled', true);
+                $('#send-button').prop('disabled', true);
             }
 
             function appendMessage(text, sender) {
@@ -118,13 +164,48 @@
             }
 
             $('#m').on('keydown', function (e) {
-                if (e.key === 'Enter' && !$('button').prop('disabled')) {
+                if (e.key === 'Enter' && !$('#send-button').prop('disabled')) {
                     e.preventDefault();
                     sendMessage();
                 }
             });
 
-            $('button').on('click', sendMessage);
+            $('#send-button').on('click', sendMessage);
+
+            // Handle form submission
+            $('#visitor-info-form').on('submit', function(e) {
+                e.preventDefault();
+
+                var name = $('#name').val().trim();
+                var contact_phone = $('#contact-phone').val().trim();
+                var arrangement = $('#arrangement').val().trim();
+                // Continue for all the other form fields
+
+                // Store these in visitorInfo
+                visitorInfo = {
+                    'name': name,
+                    'contact_phone': contact_phone,
+                    'arrangement': arrangement,
+                    // Continue for all the other form fields
+                };
+
+                socket.send(JSON.stringify({
+                    'command': 'submit_info',
+                    ...visitorInfo
+                }));
+
+                // Close the modal
+                var modal = bootstrap.Modal.getInstance(document.getElementById('visitorInfoModal'));
+                modal.hide();
+            });
+
+            // Before showing the modal, populate fields with the data in visitorInfo
+            $('#visitorInfoModal').on('show.bs.modal', function () {
+                $('#name').val(visitorInfo.name || '');
+                $('#contact-phone').val(visitorInfo.contact_phone || '');
+                $('#arrangement').val(visitorInfo.arrangement || '');
+                // Continue for all the other form fields
+            });
 
             socket.onmessage = function(event) {
                 var data = JSON.parse(event.data);
@@ -132,7 +213,13 @@
                 $('#messages .bot:last .bubble').html(message.replaceAll('\n', '<br>'));
 
                 // Enable the button
-                $('button').prop('disabled', false);
+                $('#send-button').prop('disabled', false);
+
+                // If it is the first response, enable the info button
+                if (isFirstResponse) {
+                    $('#info-button').show();
+                    isFirstResponse = false;
+                }
             };
 
             socket.onclose = function(event) {
