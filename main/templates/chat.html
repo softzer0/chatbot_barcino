@@ -64,6 +64,33 @@
                 transform: rotate(360deg);
             }
         }
+
+        .reserve-button {
+            color: #ffffff;
+            background-color: #007b00;
+            border: none;
+            border-radius: 5px;
+            padding: 10px 20px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 16px;
+            margin: 5px 2px;
+            transition-duration: 0.4s;
+            cursor: pointer;
+        }
+
+        .reserve-button:hover {
+            background-color: #006900;
+            color: white;
+            box-shadow: 0 12px 16px 0 rgba(0,0,0,0.24), 0 17px 50px 0 rgba(0,0,0,0.19);
+        }
+
+        .reserve-button:active {
+            background-color: #006200;
+            box-shadow: 0 5px 8px 0 rgba(0,0,0,0.24), 0 8px 20px 0 rgba(0,0,0,0.19);
+            transform: translateY(4px);
+        }
     </style>
 {% endblock %}
 
@@ -127,6 +154,7 @@
             var visitorInfo = {};
             var isFirstResponse = true;
             var isHumanIntercepted = false;
+            var linkRegEx = /\[([^\]]+)\]\((http[s]?:\/\/[^)]+)\)(<BTN>)?/g;
 
             socket.onopen = function(event) {
                 // Enable the button when connection is established
@@ -222,6 +250,21 @@
                     isHumanIntercepted = true;
                 }
 
+                // Parse markdown links and create actual links and buttons
+                message = message.replace(linkRegEx, function(match, text, url, btn) {
+                    var result = `<a href="${url}" class="link">${text}</a>`;
+
+                    if (btn) {
+                        result += `
+                        <button class="btn btn-primary reserve-button"
+                        data-arrangement="${text}"
+                        data-bs-toggle="modal"
+                        data-bs-target="#visitorInfoModal">Резервирајте бесплатно</button>`;
+                    }
+
+                    return result;
+                });
+
                 // If a human has intercepted the conversation, append a new message
                 if (isHumanIntercepted) {
                     appendMessage(message, 'bot');
@@ -238,6 +281,12 @@
                     $('#info-button').show();
                     isFirstResponse = false;
                 }
+
+                // Add click event listener for newly created buttons
+                $('.reserve-button').click(function() {
+                    var arrangement = $(this).data('arrangement');
+                    $('#arrangement').val(arrangement);
+                });
             };
 
             socket.onclose = function(event) {

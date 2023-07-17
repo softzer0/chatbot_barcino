@@ -3,8 +3,8 @@
     "model": "main.document",
     "pk": 1,
     "fields": {
-        "name": "Example Document",
-        "doc_file": "documents/example.csv",
+        "name": "Ponude za 2023 - Makedonija",
+        "doc_file": "documents/barcino.csv",
         "doc_type": "csv"
     }
 }

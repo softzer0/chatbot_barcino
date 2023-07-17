@@ -15,6 +15,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
         from .models import Document
         self.genie = await database_sync_to_async(Genie)(Document.objects.all())
         self.session = None
+        self.group_name = None
         await self.accept()
 
     async def disconnect(self, close_code):
@@ -37,8 +38,6 @@ class ChatConsumer(AsyncWebsocketConsumer):
         if command == 'send_message':
             # Create session on the first message
             if self.session is None:
-                # force session to save and set the session key
-                await database_sync_to_async(self.scope["session"].save)()
                 self.session = await database_sync_to_async(ChatSession.objects.create)(sid=self.scope['session'].session_key)
 
                 self.group_name = self.scope['session'].session_key
@@ -168,11 +167,11 @@ class PanelConsumer(AsyncWebsocketConsumer):
             interception_successful = await self.intercept_session(session_id)
             if interception_successful:
                 chat_message = await self.send_message(session_id, text_data_json['message'])
-                username = await self.get_username()
+                is_interceptor = await self.check_is_interceptor(session_id)
                 await self.send(text_data=json.dumps({
                     'command': 'intercepted_session',
                     'session_id': session_id,
-                    'intercepted_by': username,
+                    'is_interceptor': is_interceptor,
                     'message': chat_message.to_dict()
                 }, cls=DateTimeEncoder))
                 await self.channel_layer.group_send(await self.get_session_sid_by_id(session_id), {
@@ -202,8 +201,9 @@ class PanelConsumer(AsyncWebsocketConsumer):
         return VisitorInfo.objects.filter(session_id=session_id).first()
 
     @database_sync_to_async
-    def get_username(self):
-        return self.scope['user'].username
+    def check_is_interceptor(self, session_id):
+        from .models import ChatSession
+        return ChatSession.objects.filter(pk=session_id, human_agent=self.scope['user']).exists()
 
     @database_sync_to_async
     def get_session_sid_by_id(self, session_id):
