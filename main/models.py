@@ -48,14 +48,42 @@ class ChatSession(models.Model):
     is_human_intercepted = models.BooleanField(default=False)
     human_agent = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL)
 
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'sid': self.sid,
+            'name': self.name,
+            'is_terminated': self.is_terminated,
+            'info_provided': self.info_provided,
+            'last_message_text': self.last_message.message if self.last_message else None,
+            'is_human_intercepted': self.is_human_intercepted,
+            'human_agent': self.human_agent.id if self.human_agent else None,
+        }
+
 class ChatMessage(models.Model):
     session = models.ForeignKey(ChatSession, related_name='messages', on_delete=models.CASCADE)
-    message = models.TextField()
+    message = models.TextField(null=True, blank=True)
     response = models.TextField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'message': self.message,
+            'response': self.response,
+            'created_at': self.created_at
+        }
+
 
 class VisitorInfo(models.Model):
     name = models.CharField(max_length=255, null=True, blank=True)
     contact_phone = models.CharField(max_length=20, null=True, blank=True)
     arrangement = models.CharField(max_length=255, null=True, blank=True)
     session = models.OneToOneField(ChatSession, on_delete=models.CASCADE, related_name='visitor_info')
+
+    def to_dict(self):
+        return {
+            'name': self.name,
+            'contact_phone': self.contact_phone,
+            'arrangement': self.arrangement,
+        }

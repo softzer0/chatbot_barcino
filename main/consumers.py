@@ -18,8 +18,16 @@ class ChatConsumer(AsyncWebsocketConsumer):
         await self.accept()
 
     async def disconnect(self, close_code):
-        self.session.is_terminated = True
-        await database_sync_to_async(self.session.save)()
+        await self.close_session()
+        if self.group_name:
+            await self.channel_layer.group_discard(self.group_name, self.channel_name)
+
+    @database_sync_to_async
+    def close_session(self):
+        if self.session:
+            self.session.refresh_from_db()
+            self.session.is_terminated = True
+            self.session.save()
 
     async def receive(self, text_data=None, bytes_data=None):
         from .models import ChatSession
@@ -33,13 +41,18 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 await database_sync_to_async(self.scope["session"].save)()
                 self.session = await database_sync_to_async(ChatSession.objects.create)(sid=self.scope['session'].session_key)
 
+                self.group_name = self.scope['session'].session_key
+                await self.channel_layer.group_add(self.group_name, self.channel_name)
+
+            message = text_data_json['message']
             if not self.session.is_human_intercepted:
-                message = text_data_json['message']
                 response = self.genie.ask(message)
                 await self.store_message(self.session, message, response)
                 await self.send(text_data=json.dumps({
                     'message': response
                 }))
+            else:
+                await self.store_message(self.session, message, None)
 
         elif command == 'submit_info':
             name = text_data_json['name']
@@ -50,6 +63,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
     @database_sync_to_async
     def save_visitor_info(self, name, contact_phone, arrangement):
         from .models import VisitorInfo
+        self.session.refresh_from_db()
         self.session.info_provided = True
         self.session.save()
         # Check if VisitorInfo already exists for this session
@@ -75,11 +89,9 @@ class ChatConsumer(AsyncWebsocketConsumer):
             'panel',
             {
                 'type': 'update_visitor_info',
-                'info': {
-                    'name': visitor_info.name,
-                    'contact_phone': visitor_info.contact_phone,
-                    'arrangement': visitor_info.arrangement,
-                },
+                'command': 'visitor_info',
+                'session_id': self.session.pk,
+                'info': visitor_info.to_dict(),
             },
         )
 
@@ -91,8 +103,17 @@ class ChatConsumer(AsyncWebsocketConsumer):
         chat_message.save()
 
         # Update the session's last_message field
+        session.refresh_from_db()
         session.last_message = chat_message
         session.save()
+
+    async def intercepted_message(self, event):
+        # Send message to WebSocket
+        self.session.is_human_intercepted = True
+        await self.send(text_data=json.dumps({
+            'message': event['message'],
+            'human_intercepted': True
+        }))
 
 
 class PanelConsumer(AsyncWebsocketConsumer):
@@ -116,10 +137,11 @@ class PanelConsumer(AsyncWebsocketConsumer):
             }))
         elif command == 'fetch_messages':
             session_id = text_data_json['session_id']
-            messages = await self.get_messages(session_id)
+            messages, can_intercept = await self.get_messages(session_id)
             await self.send(text_data=json.dumps({
                 'command': 'fetch_messages',
-                'messages': messages
+                'messages': messages,
+                'can_intercept': can_intercept
             }, cls=DateTimeEncoder))
 
         elif command == 'delete_session':
@@ -145,12 +167,18 @@ class PanelConsumer(AsyncWebsocketConsumer):
             session_id = text_data_json['session_id']
             interception_successful = await self.intercept_session(session_id)
             if interception_successful:
+                chat_message = await self.send_message(session_id, text_data_json['message'])
                 username = await self.get_username()
                 await self.send(text_data=json.dumps({
                     'command': 'intercepted_session',
                     'session_id': session_id,
-                    'intercepted_by': username
-                }))
+                    'intercepted_by': username,
+                    'message': chat_message.to_dict()
+                }, cls=DateTimeEncoder))
+                await self.channel_layer.group_send(await self.get_session_sid_by_id(session_id), {
+                    'type': 'intercepted_message',
+                    'message': chat_message.response
+                })
             else:
                 await self.send(text_data=json.dumps({
                     'command': 'interception_failed',
@@ -161,24 +189,26 @@ class PanelConsumer(AsyncWebsocketConsumer):
         elif command == 'fetch_visitor_info':
             session_id = text_data_json['session_id']
             visitor_info = await self.fetch_visitor_info(session_id)
-            await self.send(text_data=json.dumps({
-                'command': 'visitor_info',
-                'session_id': session_id,
-                'info': {
-                    'name': visitor_info.name,
-                    'contact_phone': visitor_info.contact_phone,
-                    'arrangement': visitor_info.arrangement,
-                }
-            }))
+            if visitor_info:
+                await self.send(text_data=json.dumps({
+                    'command': 'visitor_info',
+                    'session_id': session_id,
+                    'info': visitor_info.to_dict()
+                }))
 
     @database_sync_to_async
     def fetch_visitor_info(self, session_id):
         from .models import VisitorInfo
-        return VisitorInfo.objects.get(session_id=session_id)
+        return VisitorInfo.objects.filter(session_id=session_id).first()
 
     @database_sync_to_async
     def get_username(self):
         return self.scope['user'].username
+
+    @database_sync_to_async
+    def get_session_sid_by_id(self, session_id):
+        from .models import ChatSession
+        return ChatSession.objects.get(pk=session_id).sid
 
     @database_sync_to_async
     def intercept_session(self, session_id):
@@ -190,8 +220,15 @@ class PanelConsumer(AsyncWebsocketConsumer):
             session.human_agent = self.scope['user']
             session.save()
             return True
+        elif session.human_agent == self.scope['user']:
+            return True
         else:
             return False
+
+    @database_sync_to_async
+    def send_message(self, session_id, response):
+        from .models import ChatMessage
+        return ChatMessage.objects.create(session_id=session_id, message=None, response=response)
 
     @database_sync_to_async
     def get_last_message(self, session):
@@ -217,11 +254,16 @@ class PanelConsumer(AsyncWebsocketConsumer):
 
     @database_sync_to_async
     def get_messages(self, session_id):
-        from .models import ChatMessage
-        return list(ChatMessage.objects.filter(session_id=session_id).values())
+        from .models import ChatSession, ChatMessage
+        session = ChatSession.objects.get(pk=session_id)
+        return list(ChatMessage.objects.filter(session_id=session_id).order_by('pk').values()), \
+            not session.is_terminated and (not session.is_human_intercepted or self.scope['user'] == session.human_agent)
 
     async def chat_message(self, event):
         await self.send(text_data=json.dumps(event, cls=DateTimeEncoder))
 
     async def chat_session(self, event):
         await self.send(text_data=json.dumps(event, cls=DateTimeEncoder))
+
+    async def update_visitor_info(self, event):
+        await self.send(text_data=json.dumps(event))

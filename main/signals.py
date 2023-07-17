@@ -6,7 +6,7 @@ from .models import ChatMessage, ChatSession
 
 @receiver(post_save, sender=ChatMessage)
 def new_message(sender, instance, created, **kwargs):
-    if created:
+    if created and instance.message:
         channel_layer = get_channel_layer()
         async_to_sync(channel_layer.group_send)(
             'panel',
@@ -32,9 +32,6 @@ def new_session(sender, instance, created, **kwargs):
             {
                 'type': 'chat_session',
                 'command': 'new_session',
-                'session': {
-                    'id': instance.id,
-                    'sid': instance.sid,
-                },
+                'session': instance.to_dict(),
             }
         )

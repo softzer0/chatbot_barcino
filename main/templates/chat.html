@@ -126,6 +126,7 @@
             var socket = new WebSocket('ws://localhost:8000/ws/chat/');
             var visitorInfo = {};
             var isFirstResponse = true;
+            var isHumanIntercepted = false;
 
             socket.onopen = function(event) {
                 // Enable the button when connection is established
@@ -139,7 +140,12 @@
                     return;
                 }
                 appendMessage(message, 'user');
-                appendMessage("", 'bot'); // Create a bot message with spinner
+
+                // Only add a bot message with a spinner if a human hasn't intercepted the conversation
+                if (!isHumanIntercepted) {
+                    appendMessage("", 'bot');
+                }
+
                 // Send message with the 'send_message' command
                 socket.send(JSON.stringify({
                     'command': 'send_message',
@@ -147,14 +153,16 @@
                 }));
                 $('#m').val('');
 
-                // Disable the button
-                $('#send-button').prop('disabled', true);
+                // Only disable the button if a human hasn't intercepted the conversation
+                if (!isHumanIntercepted) {
+                    $('#send-button').prop('disabled', true);
+                }
             }
 
             function appendMessage(text, sender) {
                 var messageElement = $('<div>').addClass('message ' + sender);
                 var bubbleElement = $('<div>').addClass('bubble').text(text);
-                if (sender === 'bot') {
+                if (sender === 'bot' && !isHumanIntercepted) {
                     var spinnerElement = $('<div>').addClass('spinner');
                     bubbleElement.append(spinnerElement);
                 }
@@ -209,8 +217,18 @@
 
             socket.onmessage = function(event) {
                 var data = JSON.parse(event.data);
-                var message = data.message;
-                $('#messages .bot:last .bubble').html(message.replaceAll('\n', '<br>'));
+                var message = data.message.replaceAll('\n', '<br>');
+                if (data.human_intercepted) {
+                    isHumanIntercepted = true;
+                }
+
+                // If a human has intercepted the conversation, append a new message
+                if (isHumanIntercepted) {
+                    appendMessage(message, 'bot');
+                } else {
+                    // Otherwise, replace the last bot message
+                    $('#messages .bot:last .bubble').html(message);
+                }
 
                 // Enable the button
                 $('#send-button').prop('disabled', false);
