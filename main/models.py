@@ -1,3 +1,5 @@
+import re
+
 from django.contrib.auth.models import User
 from django.db import models
 from langchain.document_loaders import (
@@ -32,11 +34,38 @@ class Document(models.Model):
         'docx': UnstructuredWordDocumentLoader,
     }
 
+    LINK_PLACEHOLDER = '<LINK[%i]>'
+
     def get_loader(self, mode='elements', strategy='fast'):
         if self.doc_type != 'pdf':
             return self.LOADER_MAP[self.doc_type](self.doc_file.path, mode=mode, strategy=strategy)
         else:
-            self.LOADER_MAP[self.doc_type](self.doc_file.path)
+            return self.LOADER_MAP[self.doc_type](self.doc_file.path)
+
+    def preprocess_text(self):
+        loader = self.get_loader()
+        document = loader.load()
+        doc = document[0]
+
+        url_pattern = re.compile(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+')
+        links = url_pattern.findall(doc.page_content)
+        for link in links:
+            l_obj = Link.objects.create(document=self, url=link)
+            placeholder = self.LINK_PLACEHOLDER % l_obj.pk
+            doc.page_content = doc.page_content.replace(link, placeholder)
+
+        return document
+
+    def insert_links(self, response):
+        links = Link.objects.filter(document=self)
+        for link in links:
+            response = response.replace(self.LINK_PLACEHOLDER % link.pk, link.url)
+        return response
+
+
+class Link(models.Model):
+    document = models.ForeignKey(Document, on_delete=models.CASCADE)
+    url = models.URLField(max_length=2000)
 
 
 class ChatSession(models.Model):

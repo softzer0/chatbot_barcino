@@ -45,7 +45,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
             message = text_data_json['message']
             if not self.session.is_human_intercepted:
-                response = self.genie.ask(message)
+                response = await self.genie.ask(message)
                 await self.store_message(self.session, message, response)
                 await self.send(text_data=json.dumps({
                     'message': response

@@ -154,7 +154,7 @@
             var visitorInfo = {};
             var isFirstResponse = true;
             var isHumanIntercepted = false;
-            var linkRegEx = /\[([^\]]+)\]\((http[s]?:\/\/[^)]+)\)(<BTN>)?/g;
+            var linkRegEx = /\[([^\]]+)\]\((http[s]?:\/\/[^)]+)\)/g;
 
             socket.onopen = function(event) {
                 // Enable the button when connection is established
@@ -251,18 +251,12 @@
                 }
 
                 // Parse markdown links and create actual links and buttons
-                message = message.replace(linkRegEx, function(match, text, url, btn) {
-                    var result = `<a href="${url}" class="link">${text}</a>`;
-
-                    if (btn) {
-                        result += `
-                        <button class="btn btn-primary reserve-button"
-                        data-arrangement="${text}"
-                        data-bs-toggle="modal"
-                        data-bs-target="#visitorInfoModal">Резервирајте бесплатно</button>`;
-                    }
-
-                    return result;
+                message = message.replace(linkRegEx, function(match, text, url) {
+                    return `<a href="${url}" class="link">${text}</a>
+                    <button class="btn btn-primary reserve-button"
+                    data-arrangement="${text}"
+                    data-bs-toggle="modal"
+                    data-bs-target="#visitorInfoModal">Резервирајте бесплатно</button>`;
                 });
 
                 // If a human has intercepted the conversation, append a new message

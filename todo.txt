@@ -1,0 +1,8 @@
+-u formu za rezervaciju dodati polje (broj odraslih osoba, broj dece, okvirni budzet, datum odnkad do kad), dole takodje da pise da ce ih agent pozvati sto pre.
+-dodaj pocetnu poruku da je Barcino chat bot, i da chatovanjem prihvata gdpr (politiku privatnosti)
+-da se skrepuju slike i da se uz svaku ponudu pokazu i slike hotela
+-Da se u admin panelu vidi koji agent je preuzeo koji chat (da ne dodje do mesanja agenata u jedan chat)
+-opcija da se doda dokument u chat
+-nakon unosenja podataka ide email notifikacija
+-dodaj stranicu gde se izlistavaju sortitsni po vremenu svi prikupljeni leadovi, i da se klikne da je kontaktiran i opciono unese komentar
+-poslednja faza (za sad najnebitnia) da se doda stranica gde mogu da ubacuju ponude u istom formatu i da menjaju postojece ponude, koje se kasnije embeduju kad mi potvrdimo da moze (znaci on podnese zahtev za updaate i promeni sta hoce, nama se pojavi sta je izmenjeno, i ako je dobra izmena onda embedujemo bazu)
