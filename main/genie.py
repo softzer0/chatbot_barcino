@@ -1,5 +1,6 @@
 import os
 import pickle
+import re
 
 from channels.db import database_sync_to_async
 from langchain.callbacks import get_openai_callback
@@ -41,10 +42,10 @@ class Genie:
             with open(texts_path, 'rb') as f:
                 return pickle.load(f)
         else:
-            text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=10, separators=[',', '\n'])
+            text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, separators=['\n\n', '\n'])
             texts = []
             for document in self.documents:
-                texts.extend(text_splitter.split_documents(document.preprocess_text()))
+                texts.extend(text_splitter.split_documents(document.preprocess()))
             with open(texts_path, 'wb') as f:
                 pickle.dump(texts, f)
             return texts
@@ -52,13 +53,16 @@ class Genie:
     @staticmethod
     def embeddings(texts):
         embeddings = OpenAIEmbeddings()
-        vectordb = Chroma.from_documents(texts, embeddings)
+        vectordb = Chroma.from_documents(texts, embeddings, persist_directory=os.path.join(settings.MEDIA_ROOT, 'chroma'))
         return vectordb
 
     @database_sync_to_async
     def replace_links(self, resp):
-        for document in self.documents:
-            resp = document.insert_links(resp)
+        from .models import LINK_PLACEHOLDER, LINK_REGEX, Link
+        link_ids = [int(id) for id in re.findall(LINK_REGEX, resp)]
+        links = Link.objects.filter(id__in=link_ids)
+        for link in links:
+            resp = resp.replace(LINK_PLACEHOLDER % link.pk, link.url)
         return resp
 
     async def ask(self, query: str):

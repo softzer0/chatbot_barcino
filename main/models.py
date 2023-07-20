@@ -3,13 +3,18 @@ import re
 from django.contrib.auth.models import User
 from django.db import models
 from langchain.document_loaders import (
-    UnstructuredCSVLoader,
     PyPDFLoader,
-    UnstructuredExcelLoader,
     UnstructuredHTMLLoader,
     UnstructuredFileLoader,
     UnstructuredWordDocumentLoader,
+    DataFrameLoader,
 )
+import pandas as pd
+
+
+URL_PATTERN = re.compile(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+')
+LINK_PLACEHOLDER = '<LINK[%i]>'
+LINK_REGEX = re.escape(LINK_PLACEHOLDER).replace('%i', r'(\d+)')
 
 
 class Document(models.Model):
@@ -26,41 +31,47 @@ class Document(models.Model):
     doc_type = models.CharField(max_length=5, choices=DOC_TYPE_CHOICES)
 
     LOADER_MAP = {
-        'csv': UnstructuredCSVLoader,
+        'csv': DataFrameLoader,
+        'xlsx': DataFrameLoader,
         'pdf': PyPDFLoader,
-        'xlsx': UnstructuredExcelLoader,
         'html': UnstructuredHTMLLoader,
         'txt': UnstructuredFileLoader,
         'docx': UnstructuredWordDocumentLoader,
     }
 
-    LINK_PLACEHOLDER = '<LINK[%i]>'
-
-    def get_loader(self, mode='elements', strategy='fast'):
-        if self.doc_type != 'pdf':
-            return self.LOADER_MAP[self.doc_type](self.doc_file.path, mode=mode, strategy=strategy)
+    def load(self, mode='elements', strategy='fast'):
+        loader = self.LOADER_MAP[self.doc_type]
+        if loader == DataFrameLoader:
+            if self.doc_type == 'csv':
+                df = pd.read_csv(self.doc_file.path)
+            else:  # xlsx
+                df = pd.read_excel(self.doc_file.path)
+            return loader(df, page_content_column=df.iloc[0].str.len().idxmax()).load()
+        elif self.doc_type != 'pdf':
+            return loader(self.doc_file.path, mode=mode, strategy=strategy).load()
         else:
-            return self.LOADER_MAP[self.doc_type](self.doc_file.path)
+            return loader(self.doc_file.path).load()
 
-    def preprocess_text(self):
-        loader = self.get_loader()
-        document = loader.load()
-        doc = document[0]
-
-        url_pattern = re.compile(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+')
-        links = url_pattern.findall(doc.page_content)
+    def _process_links(self, content):
+        links = URL_PATTERN.findall(content)
         for link in links:
             l_obj = Link.objects.create(document=self, url=link)
-            placeholder = self.LINK_PLACEHOLDER % l_obj.pk
-            doc.page_content = doc.page_content.replace(link, placeholder)
+            placeholder = LINK_PLACEHOLDER % l_obj.pk
+            content = content.replace(link, placeholder)
+        return content
 
-        return document
-
-    def insert_links(self, response):
-        links = Link.objects.filter(document=self)
-        for link in links:
-            response = response.replace(self.LINK_PLACEHOLDER % link.pk, link.url)
-        return response
+    def preprocess(self):
+        documents = self.load()
+        for doc in documents:
+            doc.page_content = "Page content is: " + self._process_links(doc.page_content) + '\n'
+            link_p = []
+            for key, content in doc.metadata.items():
+                if isinstance(content, str):
+                    link_p.append(self._process_links(content))
+                else:
+                    doc.page_content += f'Column "{key}" is {doc.metadata[key]}\n'
+            doc.page_content = 'Link placeholders: [' + ', '.join(link_p) + '] -> ' + doc.page_content + '\n\n'
+        return documents
 
 
 class Link(models.Model):
