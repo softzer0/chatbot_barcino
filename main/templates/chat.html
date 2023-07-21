@@ -96,9 +96,9 @@
 
 {% block content %}
     <div class="container">
-        <h2 class="text-center py-3">Chat with Genie</h2>
+        <h2 class="text-center py-2">Chat with Genie</h2>
 
-        <div id="messages" class="mt-5"></div>
+        <div id="messages" class="mt-2"></div>
 
         <div id="user-input" class="input-group">
             <input id="m" type="text" class="form-control" placeholder="Type your message" autocomplete="off" />
@@ -150,7 +150,7 @@
 {% block extra_scripts %}
     <script>
         $(function () {
-            var socket = new WebSocket('ws://localhost:8000/ws/chat/');
+            var socket = new WebSocket('ws://localhost:8000/ws/chat/');  // wss://0d08-178-221-65-1.ngrok-free.app
             var visitorInfo = {};
             var isFirstResponse = true;
             var isHumanIntercepted = false;

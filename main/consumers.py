@@ -38,6 +38,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
         if command == 'send_message':
             # Create session on the first message
             if self.session is None:
+                if not self.scope['session'].session_key:
+                    await database_sync_to_async(self.scope['session'].save)()
                 self.session = await database_sync_to_async(ChatSession.objects.create)(sid=self.scope['session'].session_key)
 
                 self.group_name = self.scope['session'].session_key

@@ -4,8 +4,8 @@
     "pk": 1,
     "fields": {
         "name": "Ponude za 2023 - Makedonija",
-        "doc_file": "documents/barcino.csv",
-        "doc_type": "csv"
+        "doc_file": "documents/barcino_preprocessed.txt",
+        "doc_type": "txt"
     }
 }
 ]

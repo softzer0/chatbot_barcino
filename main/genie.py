@@ -6,7 +6,7 @@ from channels.db import database_sync_to_async
 from langchain.callbacks import get_openai_callback
 from langchain.vectorstores import Chroma
 from langchain.embeddings import OpenAIEmbeddings
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.text_splitter import SpacyTextSplitter
 from langchain.chat_models import ChatOpenAI
 from langchain.chains import RetrievalQA
 from langchain import PromptTemplate
@@ -42,10 +42,10 @@ class Genie:
             with open(texts_path, 'rb') as f:
                 return pickle.load(f)
         else:
-            text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, separators=['\n\n', '\n'])
+            text_splitter = SpacyTextSplitter(chunk_size=1600, chunk_overlap=100, pipeline='mk_core_news_md', separator='\n')
             texts = []
             for document in self.documents:
-                texts.extend(text_splitter.split_documents(document.preprocess()))
+                texts.extend(text_splitter.split_documents(document.preprocess_text()))
             with open(texts_path, 'wb') as f:
                 pickle.dump(texts, f)
             return texts
@@ -66,6 +66,7 @@ class Genie:
         return resp
 
     async def ask(self, query: str):
+        from .models import Document
         with get_openai_callback() as cb:
             resp = self.genie.run(query)
             print(cb)
