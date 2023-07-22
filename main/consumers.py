@@ -48,9 +48,11 @@ class ChatConsumer(AsyncWebsocketConsumer):
             message = text_data_json['message']
             if not self.session.is_human_intercepted:
                 response = await self.genie.ask(message)
+                imgs = await self.genie.find_imgs(response)
                 await self.store_message(self.session, message, response)
                 await self.send(text_data=json.dumps({
-                    'message': response
+                    'message': response.split("Answer to the visitor:\n")[1],
+                    'imgs': imgs
                 }))
             else:
                 await self.store_message(self.session, message, None)

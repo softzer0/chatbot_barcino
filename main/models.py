@@ -7,9 +7,10 @@ from langchain.document_loaders import (
     UnstructuredExcelLoader,
     PyPDFLoader,
     UnstructuredHTMLLoader,
-    UnstructuredFileLoader,
+    TextLoader,
     UnstructuredWordDocumentLoader,
 )
+from langchain.docstore.document import Document as LCDocument
 
 
 URL_PATTERN = re.compile(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+')
@@ -35,32 +36,41 @@ class Document(models.Model):
         'xlsx': UnstructuredExcelLoader,
         'pdf': PyPDFLoader,
         'html': UnstructuredHTMLLoader,
-        'txt': UnstructuredFileLoader,
+        'txt': TextLoader,
         'docx': UnstructuredWordDocumentLoader,
     }
 
     def get_loader(self, mode='elements', strategy='fast'):
-        if self.doc_type != 'pdf':
-            return self.LOADER_MAP[self.doc_type](self.doc_file.path, mode=mode, strategy=strategy)
+        if self.doc_type == 'pdf':
+            return self.LOADER_MAP['pdf'](self.doc_file.path)
+        elif self.doc_type == 'txt':
+            return self.LOADER_MAP['txt'](self.doc_file.path, autodetect_encoding=True)
         else:
-            return self.LOADER_MAP[self.doc_type](self.doc_file.path)
+            return self.LOADER_MAP[self.doc_type](self.doc_file.path, mode=mode, strategy=strategy)
 
     def preprocess_text(self):
         loader = self.get_loader()
         document = loader.load()
-        for doc in document:
+        docs = []
+        if len(document) == 1:
+            for txt in document[0].page_content.split('\n'):
+                docs.append(LCDocument(page_content=txt + '\n', metadata=document[0].metadata))
+        else:
+            docs = document
+        for doc in docs:
             url_pattern = re.compile(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+')
             links = url_pattern.findall(doc.page_content)
             for link in links:
                 l_obj = Link.objects.create(document=self, url=link)
                 placeholder = LINK_PLACEHOLDER % l_obj.pk
                 doc.page_content = doc.page_content.replace(link, placeholder)
-        return document
+        return docs
 
 
 class Link(models.Model):
     document = models.ForeignKey(Document, on_delete=models.CASCADE)
     url = models.URLField(max_length=2000)
+    img_links = models.TextField(null=True, blank=True)
 
 
 class ChatSession(models.Model):

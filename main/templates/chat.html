@@ -50,32 +50,34 @@
             padding: 10px;
             box-sizing: border-box;
         }
-        .spinner {
-            display: inline-block;
-            width: 24px;
-            height: 24px;
-            border: 4px solid rgba(0, 0, 0, .1);
-            border-left-color: #0b93f6;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
+
+        @keyframes blink {
+          0% {
+            opacity: 0;
+          }
+          50% {
+            opacity: 1;
+          }
+          100% {
+            opacity: 0;
+          }
         }
-        @keyframes spin {
-            to {
-                transform: rotate(360deg);
-            }
+
+        .typing-indicator::after {
+          content: ' ...';
+          animation: blink 1s steps(5, end) infinite;
         }
 
         .reserve-button {
             color: #ffffff;
             background-color: #007b00;
             border: none;
-            border-radius: 5px;
-            padding: 10px 20px;
+            border-radius: 3px;
+            padding: 6px 12px;
             text-align: center;
             text-decoration: none;
             display: inline-block;
-            font-size: 16px;
-            margin: 5px 2px;
+            font-size: 15px;
             transition-duration: 0.4s;
             cursor: pointer;
         }
@@ -83,25 +85,119 @@
         .reserve-button:hover {
             background-color: #006900;
             color: white;
-            box-shadow: 0 12px 16px 0 rgba(0,0,0,0.24), 0 17px 50px 0 rgba(0,0,0,0.19);
+            box-shadow: 0 6px 8px 0 rgba(0,0,0,0.24), 0 7px 20px 0 rgba(0,0,0,0.19);
         }
 
         .reserve-button:active {
             background-color: #006200;
-            box-shadow: 0 5px 8px 0 rgba(0,0,0,0.24), 0 8px 20px 0 rgba(0,0,0,0.19);
+            box-shadow: 0 3px 5px 0 rgba(0,0,0,0.24), 0 5px 10px 0 rgba(0,0,0,0.19);
             transform: translateY(4px);
+        }
+
+        .carousel-item img {
+            object-fit: contain;
+            height: 200px;
+        }
+
+        .carousel {
+            max-height: 300px;
+        }
+
+        .carousel-image {
+            cursor: pointer;
+        }
+
+        #modalImage {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        .arrow {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            background: rgba(0,0,0,0.5);
+            color: #fff;
+            padding: 10px;
+            text-decoration: none;
+        }
+
+        .arrow-left {
+            left: 10px;
+        }
+
+        .arrow-right {
+            right: 10px;
+        }
+
+        .modal-clickable-area {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            cursor: pointer;
+            width: 50%;
+            z-index: 1;
+        }
+
+        .modal-clickable-area.left {
+            left: 0;
+        }
+
+        .modal-clickable-area.right {
+            right: 0;
+        }
+
+        .residency-name {
+            position: absolute;
+            top: 0;
+            margin-bottom: 0;
+            width: 100%;
+            padding: 10px;
+            text-align: center;
+            background: linear-gradient(to bottom, rgba(0, 0, 0, 0.8), rgba(0, 0, 0, 0));
+            color: #fff;
+            transition: color 0.5s ease;
+        }
+
+        .residency-name:hover {
+            color: #a8a7a7;
+        }
+
+        .close-button {
+            position: absolute;
+            right: 10px;
+            top: 10px;
+            z-index: 10;
+            background-color: rgba(0,0,0,0.5);
+            color: #fff;
+            border: none;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            padding: 0;
+            line-height: 0;
+        }
+
+        .close-button span {
+            font-size: 1.2em;
+            line-height: 0;
         }
     </style>
 {% endblock %}
 
 {% block content %}
     <div class="container">
-        <h2 class="text-center py-2">Chat with Genie</h2>
+        <h2 class="text-center py-2">Barcino Travel Asistent</h2>
 
-        <div id="messages" class="mt-2"></div>
+        <div id="messages" class="mt-2">
+            <div class="alert alert-info text-center" role="alert">
+              Započinjanjem ovog razgovora se slažete sa <a href="https://barcino.travel/mk/politika-na-privatnost/" target="_blank">Pravilima i uslovima</a>, kao i upotrebom podataka za kreiranje ponude.
+            </div>
+        </div>
 
         <div id="user-input" class="input-group">
-            <input id="m" type="text" class="form-control" placeholder="Type your message" autocomplete="off" />
+            <input id="m" type="text" class="form-control" placeholder="Unesite pitanje" autocomplete="off" />
             <button id="send-button" disabled class="btn btn-primary input-group-append">
                 <i class="fas fa-paper-plane"></i>
             </button>
@@ -145,22 +241,45 @@
             </div>
         </div>
     </div>
+
+    <div class="modal fade" id="imageModal" tabindex="-1" aria-labelledby="exampleModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content">
+                <button type="button" class="close-button" data-bs-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+                <div class="modal-body">
+                    <img id="modalImage" src="" class="img-fluid">
+                    <div class="modal-clickable-area left"></div>
+                    <div class="modal-clickable-area right"></div>
+                    <a href="#" class="arrow arrow-left"><i class="fa fa-arrow-left"></i></a>
+                    <a href="#" class="arrow arrow-right"><i class="fa fa-arrow-right"></i></a>
+                </div>
+            </div>
+        </div>
+    </div>
 {% endblock %}
 
 {% block extra_scripts %}
     <script>
         $(function () {
-            var socket = new WebSocket('ws://localhost:8000/ws/chat/');  // wss://0d08-178-221-65-1.ngrok-free.app
+            var socket = new WebSocket('ws://localhost:8000/ws/chat/');  //wss://625915672fce-3560674319287587178.ngrok-free.app
             var visitorInfo = {};
             var isFirstResponse = true;
             var isHumanIntercepted = false;
             var linkRegEx = /\[([^\]]+)\]\((http[s]?:\/\/[^)]+)\)/g;
+            var images = [];
+            var currentIndex = 0;
 
             socket.onopen = function(event) {
                 // Enable the button when connection is established
                 $('#send-button').prop('disabled', false);
                 console.log('Socket opened connection: ', event);
+                // Append a welcome message
+                $('#messages .bot:last .bubble').html('Dobrodošli na Barcino Travel Asistenta. Molimo vas da unesete vaše pitanje. Da biste dobili što tačnije odgovore, preporučujemo da budete što precizniji u formulisanju pitanja.');
             };
+
+            appendMessage('', 'bot');
 
             function sendMessage() {
                 var message = $('#m').val().trim();
@@ -191,8 +310,8 @@
                 var messageElement = $('<div>').addClass('message ' + sender);
                 var bubbleElement = $('<div>').addClass('bubble').text(text);
                 if (sender === 'bot' && !isHumanIntercepted) {
-                    var spinnerElement = $('<div>').addClass('spinner');
-                    bubbleElement.append(spinnerElement);
+                    var typingElement = $('<div>').addClass('typing-indicator').text('Razmišljam');
+                    bubbleElement.append(typingElement);
                 }
                 messageElement.append(bubbleElement);
                 $('#messages').append(messageElement);
@@ -259,12 +378,48 @@
                     data-bs-target="#visitorInfoModal">Резервирајте бесплатно</button>`;
                 });
 
+                // If there are images, create a carousel and append it to the message
+                if (data.imgs) {
+                    for (var i = 0; i < data.imgs.length; i++) {
+                        var residency = data.imgs[i];
+                        var images = residency.images;
+                        var carouselId = 'carousel' + Math.floor(Math.random() * 1000000);  // Generate a random ID for the carousel
+                        var carousel = `<div id="${carouselId}" class="mt-2 carousel carousel-dark slide" data-bs-ride="carousel">
+                                        <div class="carousel-inner" data-images="${images.join(',')}">`;
+                        for (var j = 0; j < images.length; j++) {
+                            var active = j === 0 ? 'active' : '';
+                            carousel += `<div class="carousel-item ${active}">
+                                             <img src="${images[j]}" class="d-block w-100 carousel-image" alt="${residency.name}" data-index="${j}">
+                                         </div>`;
+                        }
+                        carousel += `</div>
+                                     <a href="${residency.link}" target="_blank"><h5 class="residency-name">${residency.name}</h5></a>
+                                     <div class="d-flex justify-content-center align-items-end position-absolute bottom-0 start-0 w-100">
+                                         <button class="btn btn-primary reserve-button"
+                                                 data-arrangement="${residency.name}"
+                                                 data-bs-toggle="modal"
+                                                 data-bs-target="#visitorInfoModal">Резервирајте бесплатно</button>
+                                     </div>
+                                     <button class="carousel-control-prev" type="button" data-bs-target="#${carouselId}" data-bs-slide="prev">
+                                     <span class="carousel-control-prev-icon" aria-hidden="true"></span>
+                                     <span class="visually-hidden">Previous</span>
+                                     </button>
+                                     <button class="carousel-control-next" type="button" data-bs-target="#${carouselId}" data-bs-slide="next">
+                                     <span class="carousel-control-next-icon" aria-hidden="true"></span>
+                                     <span class="visually-hidden">Next</span>
+                                     </button>
+                                     </div>`;
+                        message += carousel;
+                    }
+                }
+
                 // If a human has intercepted the conversation, append a new message
                 if (isHumanIntercepted) {
                     appendMessage(message, 'bot');
                 } else {
                     // Otherwise, replace the last bot message
                     $('#messages .bot:last .bubble').html(message);
+                    $('#messages').scrollTop($('#messages')[0].scrollHeight);
                 }
 
                 // Enable the button
@@ -282,6 +437,69 @@
                     $('#arrangement').val(arrangement);
                 });
             };
+
+            function toggleArrows() {
+                if (currentIndex > 0) {
+                    $(".arrow-left").show();
+                } else {
+                    $(".arrow-left").hide();
+                }
+                if (currentIndex < images.length - 1) {
+                    $(".arrow-right").show();
+                } else {
+                    $(".arrow-right").hide();
+                }
+            }
+
+            // Attach a click event handler to the carousel images that opens the #imageModal
+            $(document).on('click', '.carousel-image', function() {
+                images = $(this).parent().parent().data('images').split(',');  // Assuming images are comma-separated
+                currentIndex = $(this).data('index');  // Get the index of the clicked image
+                $('#modalImage').attr('src', images[currentIndex]);
+                $('#imageModal').modal('show');
+                toggleArrows();
+            });
+
+            // Attach click event handlers to the arrows
+            $(".modal-clickable-area.left").click(function(e) {
+                e.preventDefault();
+                if (currentIndex > 0) {
+                    currentIndex--;
+                    $('#modalImage').attr('src', images[currentIndex]);
+                    toggleArrows();
+                }
+            });
+
+            $(".modal-clickable-area.right").click(function(e) {
+                e.preventDefault();
+                if (currentIndex < images.length - 1) {
+                    currentIndex++;
+                    $('#modalImage').attr('src', images[currentIndex]);
+                    toggleArrows();
+                }
+            });
+
+            $(document).keydown(function(e) {
+                if ($("#imageModal").hasClass('show')) {  // If the modal is open
+                    switch(e.which) {
+                        case 37: // left arrow key
+                            $(".modal-clickable-area.left").click();
+                            break;
+
+                        case 39: // right arrow key
+                            $(".modal-clickable-area.right").click();
+                            break;
+
+                        default: return; // exit this handler for other keys
+                    }
+                    e.preventDefault(); // prevent the default action (scroll / move caret)
+                }
+            });
+
+            // Attach a single click event handler to the #messages element that fires for any .carousel-image
+            $(document).on('click', '.carousel-image', function() {
+                $('#imageModal').modal('show');
+            });
 
             socket.onclose = function(event) {
                 console.log('Socket closed connection: ', event);
