@@ -14,14 +14,15 @@ from channels.routing import ProtocolTypeRouter, URLRouter
 from channels.sessions import SessionMiddlewareStack
 from django.core.asgi import get_asgi_application
 import main.routing
+from main.middleware import WebSocketMiddleware
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'chatbot.settings')
 
 application = ProtocolTypeRouter({
     'http': get_asgi_application(),
-    'websocket': AuthMiddlewareStack(SessionMiddlewareStack(
+    'websocket': AuthMiddlewareStack(SessionMiddlewareStack(WebSocketMiddleware(
         URLRouter(
             main.routing.websocket_urlpatterns
         )
-    )),
+    ))),
 })

@@ -47,7 +47,7 @@ class Genie:
             with open(TEXTS_PATH, 'rb') as f:
                 return pickle.load(f)
         else:
-            text_splitter = RecursiveCharacterTextSplitter(chunk_size=1550, chunk_overlap=450, separators=['\n', '\.', ','])
+            text_splitter = RecursiveCharacterTextSplitter(chunk_size=1700, chunk_overlap=200, separators=['\n', '\.', ','])
             pre_splitted_texts = []
             texts = []
             for document in self.documents:

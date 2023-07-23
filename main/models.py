@@ -66,14 +66,17 @@ class Document(models.Model):
                 doc.page_content = doc.page_content.replace(link, placeholder)
         return docs
 
-
 class Link(models.Model):
     document = models.ForeignKey(Document, on_delete=models.CASCADE)
     url = models.URLField(max_length=2000)
     img_links = models.TextField(null=True, blank=True)
 
 
+class UserIP(models.Model):
+    ip_address = models.GenericIPAddressField()
+
 class ChatSession(models.Model):
+    user_ip = models.ForeignKey(UserIP, on_delete=models.CASCADE, related_name='chat_sessions')
     sid = models.CharField(max_length=50)
     name = models.CharField(max_length=255, null=True, blank=True)
     is_terminated = models.BooleanField(default=False)
@@ -81,6 +84,7 @@ class ChatSession(models.Model):
     last_message = models.OneToOneField('ChatMessage', related_name='+', on_delete=models.SET_NULL, null=True, blank=True)
     is_human_intercepted = models.BooleanField(default=False)
     human_agent = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL)
+    agent_requested = models.BooleanField(default=False)
 
     def to_dict(self):
         return {
@@ -108,11 +112,15 @@ class ChatMessage(models.Model):
             'created_at': self.created_at
         }
 
-
 class VisitorInfo(models.Model):
     name = models.CharField(max_length=255, null=True, blank=True)
     contact_phone = models.CharField(max_length=20, null=True, blank=True)
     arrangement = models.CharField(max_length=255, null=True, blank=True)
+    adults = models.PositiveIntegerField(null=True, blank=True)
+    children = models.PositiveIntegerField(null=True, blank=True)
+    budget = models.FloatField(null=True, blank=True)
+    date_from = models.DateField(null=True, blank=True)
+    date_until = models.DateField(null=True, blank=True)
     session = models.OneToOneField(ChatSession, on_delete=models.CASCADE, related_name='visitor_info')
 
     def to_dict(self):
@@ -120,4 +128,14 @@ class VisitorInfo(models.Model):
             'name': self.name,
             'contact_phone': self.contact_phone,
             'arrangement': self.arrangement,
+            'adults': self.adults,
+            'children': self.children,
+            'budget': self.budget,
+            'date_from': self.date_from.strftime('%Y-%m-%d') if self.date_from else None,
+            'date_until': self.date_until.strftime('%Y-%m-%d') if self.date_until else None
         }
+
+class FileAttachment(models.Model):
+    file = models.FileField(upload_to='attachments/')
+    name = models.CharField(max_length=255)
+

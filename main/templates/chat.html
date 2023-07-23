@@ -3,6 +3,8 @@
 {% block title %}Chat{% endblock %}
 
 {% block extra_styles %}
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.29.4/moment.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/moment-timezone/0.5.43/moment-timezone.min.js"></script>
     <style>
         body, html {
             height: 100%;
@@ -191,13 +193,13 @@
         <h2 class="text-center py-2">Barcino Travel Asistent</h2>
 
         <div id="messages" class="mt-2">
-            <div class="alert alert-info text-center" role="alert">
+            <div class="alert alert-primary text-center" role="alert">
               Započinjanjem ovog razgovora se slažete sa <a href="https://barcino.travel/mk/politika-na-privatnost/" target="_blank">Pravilima i uslovima</a>, kao i upotrebom podataka za kreiranje ponude.
             </div>
         </div>
 
         <div id="user-input" class="input-group">
-            <input id="m" type="text" class="form-control" placeholder="Unesite pitanje" autocomplete="off" />
+            <input id="m" type="text" class="form-control" placeholder="Unesite pitanje" autocomplete="off" maxlength="100" />
             <button id="send-button" disabled class="btn btn-primary input-group-append">
                 <i class="fas fa-paper-plane"></i>
             </button>
@@ -207,6 +209,16 @@
                 Info
             </button>
         </div>
+
+        <div id="call-to-action" class="text-center" style="display: none;">
+            <div id="limit-text" class="alert alert-warning">Nadamo se da smo Vam pružili potrebne informacije. Kako želite da nastavite?</div>
+            <div id="call-agent-text" class="alert" style="display: none;"></div>
+            <button id="call-agent-button" class="btn btn-primary">Kontakt sa agentom</button>
+            <button id="info-button" type="button" class="btn btn-info" data-bs-toggle="modal" data-bs-target="#visitorInfoModal">
+                Zahtev za ponudu
+            </button>
+            <button type="button" class="btn btn-danger" onclick="window.close();">Zatvori chat</button>
+        </div>
     </div>
 
     <!-- The Modal -->
@@ -215,7 +227,7 @@
             <div class="modal-content">
                 <!-- Modal Header -->
                 <div class="modal-header">
-                    <h4 class="modal-title">Share some information</h4>
+                    <h6 class="modal-title">Zahtev za ponudu</h6>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
 
@@ -223,20 +235,51 @@
                 <div class="modal-body">
                     <form id="visitor-info-form">
                         <div class="mb-3">
-                            <label for="name" class="form-label">Name</label>
+                            <label for="name" class="form-label">Ime</label>
                             <input type="text" class="form-control" id="name">
                         </div>
                         <div class="mb-3">
-                            <label for="contact-phone" class="form-label">Contact phone</label>
-                            <input type="text" class="form-control" id="contact-phone">
+                            <label for="contact-phone" class="form-label">Kontakt telefon</label>
+                            <input type="text" class="form-control" id="contact-phone" required>
                         </div>
                         <div class="mb-3">
-                            <label for="arrangement" class="form-label">Arrangement</label>
-                            <input type="text" class="form-control" id="arrangement">
+                            <label for="email" class="form-label">E-mail</label>
+                            <input type="email" class="form-control" id="email">
+                        </div>
+                        <div class="mb-3">
+                            <label for="arrangement" class="form-label">Aranžman</label>
+                            <input type="text" class="form-control" id="arrangement" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="adults" class="form-label">Broj odraslih osoba</label>
+                            <input type="number" class="form-control" id="adults" min="1" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="children" class="form-label">Broj dece</label>
+                            <input type="number" class="form-control" min="0" id="children">
+                        </div>
+                        <div class="mb-3">
+                            <label for="budget" class="form-label">Okvirni budžet</label>
+                            <div class="input-group">
+                                <input type="number" class="form-control" id="budget" min="0">
+                                <span class="input-group-text">€</span>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="dateFrom" class="form-label">Datum od</label>
+                            <input type="date" class="form-control" id="dateFrom" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="dateTo" class="form-label">Datum do</label>
+                            <input type="date" class="form-control" id="dateTo" required>
+                            <div class="invalid-feedback">
+                                Datum do mora biti posle datuma od.
+                            </div>
                         </div>
                         <!-- Add more fields as needed -->
-                        <button type="submit" class="btn btn-primary">Submit</button>
+                        <button type="submit" class="btn btn-primary">Potvrdi</button>
                     </form>
+                    <p class="mt-3 mb-0">Nakon što popunite i potvrdite ovaj formular, naš agent će Vas kontaktirati što je pre moguće.</p>
                 </div>
             </div>
         </div>
@@ -263,26 +306,30 @@
 {% block extra_scripts %}
     <script>
         $(function () {
-            var socket = new WebSocket('ws://localhost:8000/ws/chat/');  //wss://625915672fce-3560674319287587178.ngrok-free.app
+            var socket = new WebSocket('ws://localhost:8000/ws/chat/');  // wss://625915672fce-3560674319287587178.ngrok-free.app
             var visitorInfo = {};
             var isFirstResponse = true;
             var isHumanIntercepted = false;
             var linkRegEx = /\[([^\]]+)\]\((http[s]?:\/\/[^)]+)\)/g;
             var images = [];
             var currentIndex = 0;
+            var phoneRegex = /^[\s()+-/]*([0-9][\s()+-/]*){8,}$/;
 
             socket.onopen = function(event) {
                 // Enable the button when connection is established
                 $('#send-button').prop('disabled', false);
                 console.log('Socket opened connection: ', event);
                 // Append a welcome message
-                $('#messages .bot:last .bubble').html('Dobrodošli na Barcino Travel Asistenta. Molimo vas da unesete vaše pitanje. Da biste dobili što tačnije odgovore, preporučujemo da budete što precizniji u formulisanju pitanja.');
+                $('#messages .bot:last .bubble').html(`
+                    Dobrodošli na Barcino Travel Asistenta. Molimo Vas da unesete vaše pitanje.<br>
+                    Da biste dobili što tačnije odgovore, preporučujemo da budete što precizniji u formulisanju pitanja.
+                `);
             };
 
             appendMessage('', 'bot');
 
-            function sendMessage() {
-                var message = $('#m').val().trim();
+            function sendMessage(message) {
+                message = message || $('#m').val().trim();
                 if (message.length === 0) {
                     return;
                 }
@@ -325,45 +372,101 @@
                 }
             });
 
-            $('#send-button').on('click', sendMessage);
+            $('#send-button').on('click', function() { sendMessage() });
 
-            // Handle form submission
-            $('#visitor-info-form').on('submit', function(e) {
-                e.preventDefault();
+            function validateInput(selector, condition) {
+                var value = $(selector).val();
+                if (condition(value)) {
+                    $(selector).removeClass('is-invalid').addClass('is-valid');
+                } else {
+                    $(selector).removeClass('is-valid').addClass('is-invalid');
+                }
+            }
 
-                var name = $('#name').val().trim();
-                var contact_phone = $('#contact-phone').val().trim();
-                var arrangement = $('#arrangement').val().trim();
-                // Continue for all the other form fields
+            $(document).ready(function() {
+                $('#visitor-info-form').on('submit', function(e) {
+                    e.preventDefault();
 
-                // Store these in visitorInfo
-                visitorInfo = {
-                    'name': name,
-                    'contact_phone': contact_phone,
-                    'arrangement': arrangement,
-                    // Continue for all the other form fields
-                };
+                    var dateFrom = new Date($('#dateFrom').val()).toISOString().slice(0,10);
+                    var dateUntil = new Date($('#dateTo').val()).toISOString().slice(0,10);
+                    var contact_phone = $('#contact-phone').val().trim();
 
-                socket.send(JSON.stringify({
-                    'command': 'submit_info',
-                    ...visitorInfo
-                }));
+                    validateInput('#contact-phone', function(val) { return phoneRegex.test(val); });
+                    validateInput('#dateTo', function(val) { return new Date(val) > new Date(dateFrom); });
 
-                // Close the modal
-                var modal = bootstrap.Modal.getInstance(document.getElementById('visitorInfoModal'));
-                modal.hide();
+                    // If validation fails, stop execution
+                    if ($('.is-invalid').length) {
+                        return;
+                    }
+
+                    var name = $('#name').val().trim();
+                    var email = $('#email').val().trim();
+                    var arrangement = $('#arrangement').val().trim();
+                    var adults = $('#adults').val();
+                    var children = $('#children').val();
+                    var budget = $('#budget').val();
+
+                    // Store these in visitorInfo
+                    visitorInfo = {
+                        'name': name,
+                        'contact_phone': contact_phone,
+                        'email': email,
+                        'arrangement': arrangement,
+                        'adults': adults,
+                        'children': children,
+                        'budget': budget,
+                        'date_from': dateFrom,
+                        'date_until': dateUntil
+                        // Continue for all the other form fields
+                    };
+
+                    socket.send(JSON.stringify({
+                        'command': 'submit_info',
+                        'data': visitorInfo
+                    }));
+
+                    // Close the modal
+                    var modal = bootstrap.Modal.getInstance(document.getElementById('visitorInfoModal'));
+                    modal.hide();
+                });
             });
 
             // Before showing the modal, populate fields with the data in visitorInfo
             $('#visitorInfoModal').on('show.bs.modal', function () {
                 $('#name').val(visitorInfo.name || '');
                 $('#contact-phone').val(visitorInfo.contact_phone || '');
+                $('#email').val(visitorInfo.email || '');
                 $('#arrangement').val(visitorInfo.arrangement || '');
-                // Continue for all the other form fields
+                $('#adults').val(visitorInfo.adults || '');
+                $('#children').val(visitorInfo.children || '');
+                $('#budget').val(visitorInfo.budget || '');
+                $('#dateFrom').val(visitorInfo.date_from || '');
+                $('#dateTo').val(visitorInfo.date_until || '');
+
+                // Clear validation
+                $('#visitor-info-form').removeClass('was-validated');
+                $('#visitor-info-form').find('.is-valid, .is-invalid').removeClass('is-valid is-invalid');
             });
 
             socket.onmessage = function(event) {
                 var data = JSON.parse(event.data);
+
+                if (!isHumanIntercepted && (data.agent_requested || isFirstResponse && data.exceeded_limit)) {
+                    $('#user-input').hide();
+                    $('#call-to-action').show();
+                    $('#send-button').prop('disabled', false);
+                    if (!isFirstResponse || !data.message) {
+                        isHumanIntercepted = true;
+                        $('#messages .bot:last .bubble').remove();
+                        $('#call-agent-button').click();
+                        return;
+                    }
+                }
+
+                if (!data.message) {
+                    return;
+                }
+
                 var message = data.message.replaceAll('\n', '<br>');
                 if (data.human_intercepted) {
                     isHumanIntercepted = true;
@@ -416,19 +519,29 @@
                 // If a human has intercepted the conversation, append a new message
                 if (isHumanIntercepted) {
                     appendMessage(message, 'bot');
+                    if (!$('#user-input').is(':visible')) {
+                        $('#call-to-action').hide();
+                        $('#user-input').show();
+                    }
                 } else {
                     // Otherwise, replace the last bot message
                     $('#messages .bot:last .bubble').html(message);
                     $('#messages').scrollTop($('#messages')[0].scrollHeight);
-                }
 
-                // Enable the button
-                $('#send-button').prop('disabled', false);
+                    // If the user has sent 5 messages, disable the input and show the call to action
+                    if (!isHumanIntercepted && data.exceeded_limit) {
+                        $('#user-input').hide();
+                        $('#call-to-action').show();
+                    }
 
-                // If it is the first response, enable the info button
-                if (isFirstResponse) {
-                    $('#info-button').show();
-                    isFirstResponse = false;
+                    // Enable the button
+                    $('#send-button').prop('disabled', false);
+
+                    // If it is the first response, enable the info button
+                    if (isFirstResponse) {
+                        $('#info-button').show();
+                        isFirstResponse = false;
+                    }
                 }
 
                 // Add click event listener for newly created buttons
@@ -477,6 +590,37 @@
                     $('#modalImage').attr('src', images[currentIndex]);
                     toggleArrows();
                 }
+            });
+
+            $('#call-agent-button').on('click', function () {
+                $('#limit-text').hide();
+                $('#call-agent-button').hide();
+                // Get the current date and time in Macedonia
+                var now = moment().tz("Europe/Skopje");
+
+                // Get the current day of the week (0 for Sunday, 1 for Monday, ..., 6 for Saturday)
+                var dayOfWeek = now.day();
+
+                // Get the current hour
+                var hour = now.hour();
+
+                // Check if it's a working day and time
+                var isWorkingTime = (dayOfWeek >= 1 && dayOfWeek <= 5) && (hour >= 9 && hour < 17);
+
+                // isWorkingTime = true; // delete this
+
+                if (isWorkingTime) {
+                    // It's a working time, send the message to call an agent
+                    $('#call-agent-text').text('Prvi agent će vas kontaktirati u što kraćem roku...').addClass('alert-info').show();
+                    if (!isHumanIntercepted) {
+                        isHumanIntercepted = true;
+                        sendMessage('контактирам агент');
+                    }
+                } else {
+                    // It's not a working time, show the alert message
+                    $('#call-agent-text').text('Naši agenti su trenutno van radnog vremena (od 9 do 17h CET, od ponedeljka do petka). Molimo Vas da nas kontaktirate putem e-maila.').addClass('alert-danger').show();
+                }
+                $('#call-agent-text').show();
             });
 
             $(document).keydown(function(e) {

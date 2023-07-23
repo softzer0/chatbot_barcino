@@ -140,25 +140,64 @@
 <div class="container-fluid h-100 d-flex flex-column">
     <div class="row flex-grow-1 overflow-hidden">
         <div class="col-md-4 panel-wrapper">
-            <h5>Chat Sessions</h5>
+            <h5 class="mt-2">Chat sesije</h5>
             <div class="list-group panel-content" id="session-list"></div>
         </div>
         <div class="col-md-5 panel-wrapper">
-            <h5>Chat Session</h5>
+            <h5 class="mt-2">Trenutna sesija</h5>
             <div id="chat-session" class="panel-body panel-content"></div>
             <div id="intercept-panel" class="d-none input-group chat-input">
                 <input type="text" id="msg-input" class="form-control" placeholder="Type your message" autocomplete="off" />
-                <button id="send-button" class="btn btn-primary">
+                <input type="file" id="file-input" style="display: none;">
+                <label class="btn btn-secondary input-group-append" for="file-input">
+                    <i class="fas fa-paperclip"></i>
+                </label>
+                <button id="send-button" class="btn btn-primary input-group-append">
                     <i class="fas fa-paper-plane"></i>
                 </button>
             </div>
         </div>
         <div class="col-md-3 panel-wrapper">
-            <h5>Information</h5>
+            <h5 class="mt-2">Prikupljene informacije</h5>
             <div id="info-pane" class="panel-content">
-                <p>Name:<br/><span id="name"></span></p>
-                <p>Contact phone:<br/><span id="contact-phone"></span></p>
-                <p>Arrangement:<br/><span id="arrangement"></span></p>
+                <ul class="list-group">
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <span class="font-weight-bold">Ime:</span>
+                        <span id="name"></span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <span class="font-weight-bold">Kontakt telefon:</span>
+                        <span id="contact-phone"></span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <span class="font-weight-bold">Email:</span>
+                        <span id="email"></span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <span class="font-weight-bold">Aranžman:</span>
+                        <span id="arrangement"></span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <span class="font-weight-bold">Broj odraslih osoba:</span>
+                        <span id="adults"></span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <span class="font-weight-bold">Broj dece:</span>
+                        <span id="children"></span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <span class="font-weight-bold">Okvirni budžet:</span>
+                        <span id="budget"></span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <span class="font-weight-bold">Datum od:</span>
+                        <span id="date-from"></span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <span class="font-weight-bold">Datum do:</span>
+                        <span id="date-until"></span>
+                    </li>
+                </ul>
             </div>
         </div>
     </div>
@@ -190,7 +229,7 @@
 {% block extra_scripts %}
 <script>
     $(function () {
-        var socket = new WebSocket('ws://localhost:8000/ws/panel/');
+        var socket = new WebSocket('ws://localhost:8000/ws/panel/'); // wss://625915672fce-3560674319287587178.ngrok-free.app
         var activeSession = null;
         var pendingSessionMessages = {};
 
@@ -368,7 +407,27 @@
                 if (activeSession === data.session_id) {
                     $('#name').text(data.info.name);
                     $('#contact-phone').text(data.info.contact_phone);
+                    $('#email').text(data.info.email);
                     $('#arrangement').text(data.info.arrangement);
+                    $('#adults').text(data.info.adults);
+                    $('#children').text(data.info.children);
+                    $('#budget').text(data.info.budget ? data.info.budget + ' €' : '');
+
+                    var fromDate = data.info.date_from ? new Date(data.info.date_from) : null;
+                    var toDate = data.info.date_until ? new Date(data.info.date_until) : null;
+
+                    var options = { year: 'numeric', month: 'long', day: 'numeric' };
+
+                    if (fromDate) {
+                        $('#date-from').text(fromDate.toLocaleDateString(undefined, options));
+                    } else {
+                        $('#date-from').text('');
+                    }
+                    if (toDate) {
+                        $('#date-until').text(toDate.toLocaleDateString(undefined, options));
+                    } else {
+                        $('#date-until').text('');
+                    }
                 }
 
             } else if (data.command === 'intercepted_session') {
@@ -405,6 +464,9 @@
             $('#name').text('');
             $('#contact-phone').text('');
             $('#arrangement').text('');
+            $('#adults').text('');
+            $('#children').text('');
+            $('#budget').text('');
             socket.send(JSON.stringify({ command: 'fetch_messages', session_id: sessionId }));
             // Fetch the visitor info for the active session
             socket.send(JSON.stringify({ command: 'fetch_visitor_info', session_id: sessionId }));
@@ -449,6 +511,23 @@
 
         // Handle the click event of the intercept button
         $('#send-button').on('click', sendMessage);
+
+        $('#file-input').change(function() {
+            var formData = new FormData();
+            formData.append('file', $('#file-input')[0].files[0]);
+            formData.append('session_id', activeSession);
+
+            $.ajax({
+                url: '/upload',
+                type: 'POST',
+                data: formData,
+                processData: false,  // tell jQuery not to process the data
+                contentType: false,  // tell jQuery not to set contentType
+                success: function(data) {
+                    console.log('File has been uploaded');
+                }
+            });
+        });
     });
 </script>
 {% endblock %}
