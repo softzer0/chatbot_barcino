@@ -133,6 +133,12 @@
         padding: 10px;
         box-sizing: border-box;
     }
+
+    .attachment {
+        color: black;
+        display: inline-block;
+        word-break: break-all;
+    }
 </style>
 {% endblock %}
 
@@ -144,7 +150,7 @@
             <div class="list-group panel-content" id="session-list"></div>
         </div>
         <div class="col-md-5 panel-wrapper">
-            <h5 class="mt-2">Trenutna sesija</h5>
+            <h5 class="mt-2">Odabrana sesija</h5>
             <div id="chat-session" class="panel-body panel-content"></div>
             <div id="intercept-panel" class="d-none input-group chat-input">
                 <input type="text" id="msg-input" class="form-control" placeholder="Type your message" autocomplete="off" />
@@ -221,6 +227,7 @@
         <div class="card-body">
             <div class="badge question mb-1"></div>
             <div class="badge answer"></div>
+            <div class="badge attachment d-none"></div>
         </div>
     </div>
 </template>
@@ -342,10 +349,32 @@
                 }
                 let answer = card.find('.answer');
                 answer.html(formatMessage(message.response || ''));
+                if (message.file) {
+                    let attachment = card.find('.attachment');
+                    let filename = message.file.split('/').pop();
+                    attachment.html('<i class="fa fa-paperclip"></i> <a href="/media/' + message.file + '" target="_blank">' + filename + '</a>');
+                    attachment.removeClass('d-none');
+                }
             });
 
             // Scroll to bottom when a new message is appended
             setTimeout(() => { $('#chat-session').scrollTop($('#chat-session')[0].scrollHeight) });
+        }
+
+        function disableInput(){
+            $('#msg-input').prop('disabled', true);
+            $('#file-input').prop('disabled', true);
+            $('#send-button').prop('disabled', true);
+        }
+
+        function enableInput(no_clear){
+            $('#msg-input').prop('disabled', false);
+            $('#file-input').prop('disabled', false);
+            $('#send-button').prop('disabled', false);
+            if (!no_clear) {
+                $('#msg-input').val('');
+                $('#msg-input').focus();
+            }
         }
 
         socket.onmessage = function(event) {
@@ -430,13 +459,11 @@
                     }
                 }
 
-            } else if (data.command === 'intercepted_session') {
+            } else if (data.command === 'intercepted_session' || data.command === 'file_uploaded') {
                 if (activeSession === data.session_id) {
                     appendMessage(data.message);
                     if (data.is_interceptor) {
-                        $('#msg-input').prop('disabled', false);
-                        $('#send-button').prop('disabled', false);
-                        $('#msg-input').focus();
+                        enableInput();
                     }
                 }
 
@@ -460,6 +487,7 @@
             sessionDiv.addClass('active');
             sessionDiv.removeClass('new-message');
             // Clear the chat session before loading new messages
+            enableInput();
             $('#chat-session').html('');
             $('#name').text('');
             $('#contact-phone').text('');
@@ -476,18 +504,12 @@
             if (activeSession) {
                 var message = $('#msg-input').val();
                 if (message.trim()) {
-                    // Disable the input and button temporarily
-                    $('#msg-input').prop('disabled', true);
-                    $('#send-button').prop('disabled', true);
-
+                    disableInput();
                     socket.send(JSON.stringify({
                         command: 'intercept_session',
                         session_id: activeSession,
                         message: message
                     }));
-
-                    // Clear the input
-                    $('#msg-input').val('');
                 }
             }
         }
@@ -513,18 +535,30 @@
         $('#send-button').on('click', sendMessage);
 
         $('#file-input').change(function() {
+            $('#msg-input').prop('disabled', true);
+            $('#file-input').prop('disabled', true);
+            $('#send-button').prop('disabled', true);
+
             var formData = new FormData();
             formData.append('file', $('#file-input')[0].files[0]);
+            formData.append('message', $('#msg-input').val());
             formData.append('session_id', activeSession);
 
             $.ajax({
-                url: '/upload',
+                url: '/upload/',
                 type: 'POST',
                 data: formData,
                 processData: false,  // tell jQuery not to process the data
                 contentType: false,  // tell jQuery not to set contentType
                 success: function(data) {
+                    enableInput();
+                    $('#file-input').val('');
                     console.log('File has been uploaded');
+                },
+                error: function () {
+                    enableInput(true);
+                    $('#file-input').val('');
+                    console.error('Failure in uploading the file');
                 }
             });
         });

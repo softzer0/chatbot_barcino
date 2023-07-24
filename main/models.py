@@ -1,3 +1,4 @@
+import os
 import re
 
 from django.contrib.auth.models import User
@@ -74,9 +75,10 @@ class Link(models.Model):
 
 class UserIP(models.Model):
     ip_address = models.GenericIPAddressField()
+    latest_message_time = models.DateTimeField(null=True, blank=True)
 
 class ChatSession(models.Model):
-    user_ip = models.ForeignKey(UserIP, on_delete=models.CASCADE, related_name='chat_sessions')
+    user_ip = models.ForeignKey(UserIP, on_delete=models.SET_NULL, null=True, blank=True, related_name='chat_sessions')
     sid = models.CharField(max_length=50)
     name = models.CharField(max_length=255, null=True, blank=True)
     is_terminated = models.BooleanField(default=False)
@@ -102,6 +104,7 @@ class ChatMessage(models.Model):
     session = models.ForeignKey(ChatSession, related_name='messages', on_delete=models.CASCADE)
     message = models.TextField(null=True, blank=True)
     response = models.TextField(null=True, blank=True)
+    file = models.FileField(upload_to='attachments/', null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def to_dict(self):
@@ -112,9 +115,14 @@ class ChatMessage(models.Model):
             'created_at': self.created_at
         }
 
+    @property
+    def filename(self):
+        return os.path.basename(self.file.name)
+
 class VisitorInfo(models.Model):
     name = models.CharField(max_length=255, null=True, blank=True)
     contact_phone = models.CharField(max_length=20, null=True, blank=True)
+    email = models.EmailField(null=True, blank=True)
     arrangement = models.CharField(max_length=255, null=True, blank=True)
     adults = models.PositiveIntegerField(null=True, blank=True)
     children = models.PositiveIntegerField(null=True, blank=True)
@@ -127,6 +135,7 @@ class VisitorInfo(models.Model):
         return {
             'name': self.name,
             'contact_phone': self.contact_phone,
+            'email': self.email,
             'arrangement': self.arrangement,
             'adults': self.adults,
             'children': self.children,
@@ -134,8 +143,3 @@ class VisitorInfo(models.Model):
             'date_from': self.date_from.strftime('%Y-%m-%d') if self.date_from else None,
             'date_until': self.date_until.strftime('%Y-%m-%d') if self.date_until else None
         }
-
-class FileAttachment(models.Model):
-    file = models.FileField(upload_to='attachments/')
-    name = models.CharField(max_length=255)
-

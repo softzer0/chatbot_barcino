@@ -10,6 +10,7 @@ from django.db.models import F
 from django.utils import timezone
 from nltk import ngrams
 
+from .redis_init import redis_conn
 from chatbot.utils import DateTimeEncoder
 from .genie import Genie
 
@@ -19,10 +20,13 @@ contact_keywords = 'kontaktiram kontaktiraj kontakt kontaktirajte kontaktira'\
                    ' tipkam tipkaj tipkanje tipkajte tipka'\
                    ' pisuvam pisuvaj pisuvanje pisuvajte pisuva' \
                    ' pišuvam pišuvaj pišuvanje pišuvajte pišuva'\
+                   ' prasam prasaj prasanje prasajte prasa'\
+                   ' prašam prašaj prašanje prašajte praša'\
                    ' контактирам контактирај контакт контактирајте контактира'\
                    ' зборувам зборувај зборување зборувајте зборува'\
                    ' типкам типкај типкање типкајте типка'\
-                   ' пишувам пишувај пишување пишувајте пишува'
+                   ' пишувам пишувај пишување пишувајте пишува'\
+                   ' прашам прашај прашање прашајте праша'
 agent_keywords = 'agenta agent agenti agentom'\
                  ' operator operatori operatorot'\
                  ' covek covekot čovek čovekot'\
@@ -44,6 +48,11 @@ def calculate_trigram_similarity(message, keywords):
             scores.append(sum(intersection.values()) / sum(union.values()))
     return max(scores)
 
+
+MESSAGE_LIMIT_PER_IP = 5
+TIME_LIMIT_PER_IP = timedelta(hours=1)
+GLOBAL_MESSAGE_LIMIT_PER_MINUTE = 25
+
 class ChatConsumer(AsyncWebsocketConsumer):
     async def connect(self):
         from .models import Document
@@ -51,7 +60,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
         self.session = None
         self.group_name = None
         await self.accept()
-        await self.handle_exceeded_limit()
+        await self.handle_exceeded_msg_limit()
 
     async def disconnect(self, close_code):
         await self.close_session()
@@ -65,26 +74,70 @@ class ChatConsumer(AsyncWebsocketConsumer):
             self.session.is_terminated = True
             self.session.save()
 
-    @database_sync_to_async
-    def is_exceeded_message_limit(self):
-        from .models import UserIP, ChatMessage
-        user_ip, created = UserIP.objects.update_or_create(
-            ip_address=self.scope['client_ip'],
-            defaults={'latest_message_time': timezone.now()}
-        )
-        one_hour_ago = timezone.now() - timedelta(hours=1)
-        message_count = ChatMessage.objects.filter(
-            session__in=user_ip.chat_sessions.all(),
-            created_at__gte=one_hour_ago
-        ).count()
-        return message_count, user_ip
+    @staticmethod
+    async def get_global_msg_limit(update=True):
+        current_minute = datetime.now().replace(second=0, microsecond=0)
+        key = f"messages:{current_minute}"
+        count = redis_conn.get(key)
 
-    async def handle_exceeded_limit(self):
-        message_count, user_ip = await self.is_exceeded_message_limit()
-        if message_count >= 5:
-            await self.send(text_data=json.dumps({'exceeded_limit': True}))
-            return True, message_count, user_ip
-        return False, message_count, user_ip
+        # If the key doesn't exist, initialize it
+        if count is None:
+            if update:
+                redis_conn.set(key, 1)
+                # Set the key to expire after 1 minute
+                redis_conn.expireat(key, current_minute + timedelta(minutes=1))
+            return False, 0
+
+        count = int(count)
+        # If the count exceeds the limit
+        if count >= GLOBAL_MESSAGE_LIMIT_PER_MINUTE:
+            ttl = redis_conn.ttl(key)
+            return True, ttl
+
+        # Otherwise, increment the count if update is True
+        if update:
+            redis_conn.incr(key)
+        return False, 0
+
+    @database_sync_to_async
+    def get_message_limit(self):
+        from .models import UserIP, ChatMessage
+        user_ip, created = UserIP.objects.get_or_create(ip_address=self.scope['client_ip'])
+        message_count = 0
+        remaining_secs = 0
+        if not created:
+            one_hour_ago = timezone.now() - TIME_LIMIT_PER_IP
+            message_count = ChatMessage.objects.filter(
+                session__in=user_ip.chat_sessions.all(),
+                session__is_human_intercepted=False,
+                session__agent_requested=False,
+                created_at__gte=one_hour_ago
+            ).count()
+            if user_ip.latest_message_time:
+                remaining_secs = max(0, int((user_ip.latest_message_time + TIME_LIMIT_PER_IP - timezone.now()).total_seconds()))
+        return message_count, user_ip, remaining_secs
+
+    @database_sync_to_async
+    def update_last_message_time(self, user_ip):
+        user_ip.latest_message_time = timezone.now()
+        user_ip.save()
+
+    async def handle_exceeded_msg_limit(self, message_count=None, user_ip=None, remaining_secs=None, update_time=False):
+        if not user_ip:
+            message_count, user_ip, remaining_secs = await self.get_message_limit()
+        is_exceeded = False
+        if message_count >= MESSAGE_LIMIT_PER_IP:
+            is_exceeded = True
+            if update_time:
+                await self.update_last_message_time(user_ip)
+        global_limit = False
+        if not is_exceeded:
+            is_exceeded, remaining_secs = await self.get_global_msg_limit(update_time)
+            if is_exceeded:
+                global_limit = True
+        if is_exceeded:
+            await self.send(text_data=json.dumps({'exceeded_limit': True, 'remaining_secs': remaining_secs, 'global_limit': global_limit}))
+        return is_exceeded, message_count, user_ip, remaining_secs
 
     async def receive(self, text_data=None, bytes_data=None):
         from .models import ChatSession
@@ -92,9 +145,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
         command = text_data_json['command']
 
         if command == 'send_message':
-            is_exceeded_message_limit, message_count, user_ip = await self.handle_exceeded_limit()
-            if is_exceeded_message_limit:
-                return
+            message_count, user_ip, remaining_secs = await self.get_message_limit()
 
             # Create session on the first message
             if self.session is None:
@@ -106,21 +157,24 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 await self.channel_layer.group_add(self.group_name, self.channel_name)
 
             message = text_data_json['message'][:100]
-            if not self.session.is_human_intercepted:
+            if not self.session.is_human_intercepted and not self.session.agent_requested:
                 if calculate_trigram_similarity(message, contact_keywords) > 0.05 and\
                    calculate_trigram_similarity(message, agent_keywords) > 0.05:
                     # If the user has requested to contact an agent, set agent_requested to True
                     await self.set_agent_requested()
                     await self.send(text_data=json.dumps({'agent_requested': True}))
                 else:
-                    response = await self.genie.ask(message)
-                    imgs = await self.genie.find_imgs(response)
-                    await self.store_message(self.session, message, response)
-                    await self.send(text_data=json.dumps({
-                        'message': response.split("Answer to the visitor:\n")[1],
-                        'exceeded_limit': message_count + 1 == 5,
-                        'imgs': imgs
-                    }))
+                    is_exceeded_msg_limit = (await self.handle_exceeded_msg_limit(message_count, user_ip, remaining_secs, True))[0]
+                    if not is_exceeded_msg_limit:
+                        response = await self.genie.ask(message)
+                        imgs = await self.genie.find_imgs(response)
+                        await self.store_message(self.session, message, response)
+                        await self.send(text_data=json.dumps({
+                            'message': response.split("Answer to the visitor:\n")[1],
+                            'exceeded_limit': message_count + 1 == MESSAGE_LIMIT_PER_IP,
+                            'remaining_secs': remaining_secs,
+                            'imgs': imgs
+                        }))
             if self.session.is_human_intercepted or self.session.agent_requested:
                 await self.store_message(self.session, message, None)
 
@@ -185,9 +239,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
         }))
 
     async def file_uploaded(self, event):
-        await self.send(text_data=json.dumps({
-            'filename': event['filename']
-        }))
+        await self.send(text_data=json.dumps(event))
 
 
 class PanelConsumer(AsyncWebsocketConsumer):
@@ -341,4 +393,7 @@ class PanelConsumer(AsyncWebsocketConsumer):
         await self.send(text_data=json.dumps(event, cls=DateTimeEncoder))
 
     async def update_visitor_info(self, event):
+        await self.send(text_data=json.dumps(event))
+
+    async def file_uploaded(self, event):
         await self.send(text_data=json.dumps(event))

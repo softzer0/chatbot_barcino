@@ -185,12 +185,16 @@
             font-size: 1.2em;
             line-height: 0;
         }
+
+        #form-toast {
+            z-index: 9999;
+        }
     </style>
 {% endblock %}
 
 {% block content %}
     <div class="container">
-        <h2 class="text-center py-2">Barcino Travel Asistent</h2>
+        <img src="/static/barcino-tours_2x_resized.webp" alt="Barcino Travel Asistent" class="mx-auto d-block py-2">
 
         <div id="messages" class="mt-2">
             <div class="alert alert-primary text-center" role="alert">
@@ -205,19 +209,25 @@
             </button>
 
             <!-- Button to Open the Modal -->
-            <button id="info-button" type="button" style="display: none;" class="btn btn-info input-group-append" data-bs-toggle="modal" data-bs-target="#visitorInfoModal">
+            <button type="button" style="display: none;" class="btn btn-info info-button input-group-append" data-bs-toggle="modal" data-bs-target="#visitorInfoModal">
                 Info
             </button>
         </div>
 
         <div id="call-to-action" class="text-center" style="display: none;">
-            <div id="limit-text" class="alert alert-warning">Nadamo se da smo Vam pružili potrebne informacije. Kako želite da nastavite?</div>
+            <div id="limit-text" class="alert alert-warning"></div>
             <div id="call-agent-text" class="alert" style="display: none;"></div>
             <button id="call-agent-button" class="btn btn-primary">Kontakt sa agentom</button>
-            <button id="info-button" type="button" class="btn btn-info" data-bs-toggle="modal" data-bs-target="#visitorInfoModal">
+            <button type="button" class="btn btn-info info-button" data-bs-toggle="modal" data-bs-target="#visitorInfoModal">
                 Zahtev za ponudu
             </button>
             <button type="button" class="btn btn-danger" onclick="window.close();">Zatvori chat</button>
+        </div>
+    </div>
+
+    <div id="form-toast" class="toast text-white bg-success border-0 position-fixed top-0 end-0 m-3" id="submit-toast" role="alert" aria-live="assertive" aria-atomic="true">
+        <div class="toast-body text-center">
+            Vaši podaci su uspešno usnimljeni.
         </div>
     </div>
 
@@ -261,7 +271,7 @@
                         <div class="mb-3">
                             <label for="budget" class="form-label">Okvirni budžet</label>
                             <div class="input-group">
-                                <input type="number" class="form-control" id="budget" min="0">
+                                <input type="number" class="form-control" id="budget" min="0" step="100">
                                 <span class="input-group-text">€</span>
                             </div>
                         </div>
@@ -314,6 +324,7 @@
             var images = [];
             var currentIndex = 0;
             var phoneRegex = /^[\s()+-/]*([0-9][\s()+-/]*){8,}$/;
+            var countdownInterval;
 
             socket.onopen = function(event) {
                 // Enable the button when connection is established
@@ -321,19 +332,21 @@
                 console.log('Socket opened connection: ', event);
                 // Append a welcome message
                 $('#messages .bot:last .bubble').html(`
-                    Dobrodošli na Barcino Travel Asistenta. Molimo Vas da unesete vaše pitanje.<br>
-                    Da biste dobili što tačnije odgovore, preporučujemo da budete što precizniji u formulisanju pitanja.
+                    <b>Zdravo, ja sam Milica, chatbot agent Barcino Travela.</b> Kako ti mogu pomoći?<br><br>
+                    <small><i>Kako bih ti precizno dala odgovore, preporučujem da budeš što precizniji u definisanju pitanja.</i></small>
                 `);
             };
 
             appendMessage('', 'bot');
 
-            function sendMessage(message) {
+            function sendMessage(message, no_append) {
                 message = message || $('#m').val().trim();
                 if (message.length === 0) {
                     return;
                 }
-                appendMessage(message, 'user');
+                if (!no_append) {
+                    appendMessage(message, 'user');
+                }
 
                 // Only add a bot message with a spinner if a human hasn't intercepted the conversation
                 if (!isHumanIntercepted) {
@@ -353,16 +366,24 @@
                 }
             }
 
-            function appendMessage(text, sender) {
+            function appendMessage(text, sender, file) {
                 var messageElement = $('<div>').addClass('message ' + sender);
                 var bubbleElement = $('<div>').addClass('bubble').text(text);
                 if (sender === 'bot' && !isHumanIntercepted) {
-                    var typingElement = $('<div>').addClass('typing-indicator').text('Razmišljam');
+                    var typingElement = $('<div>').addClass('typing-indicator').html('<i>Kuckam</i>');
                     bubbleElement.append(typingElement);
+                }
+                if (file) {
+                    var filename = file.split('/').pop();
+                    var fileLink = $('<a>').attr('href', '/media/'+file).attr('target', '_blank').addClass('badge bg-primary').html('<i class="fa fa-paperclip"></i> ' + filename);
+                    if (text) {
+                        bubbleElement.append('<br/>');
+                    }
+                    bubbleElement.append(fileLink);
                 }
                 messageElement.append(bubbleElement);
                 $('#messages').append(messageElement);
-                $('#messages').scrollTop($('#messages')[0].scrollHeight);
+                setTimeout(function() { $('#messages').scrollTop($('#messages')[0].scrollHeight); });
             }
 
             $('#m').on('keydown', function (e) {
@@ -428,6 +449,9 @@
                     // Close the modal
                     var modal = bootstrap.Modal.getInstance(document.getElementById('visitorInfoModal'));
                     modal.hide();
+
+                    var toast = new bootstrap.Toast($('#form-toast')[0]);
+                    toast.show();
                 });
             });
 
@@ -448,26 +472,52 @@
                 $('#visitor-info-form').find('.is-valid, .is-invalid').removeClass('is-valid is-invalid');
             });
 
+            function startCountdown(seconds) {
+                clearInterval(countdownInterval);
+                countdownInterval = setInterval(function() {
+                    seconds--;
+                    $('#limit-text').text('Molimo sačekajte ' + seconds + ' sekundi.');
+                    if (seconds <= 0) {
+                        clearInterval(countdownInterval);
+                        var lastUserMsg = $('#messages .user:last .bubble').text();
+                        if (lastUserMsg) {
+                            sendMessage(lastUserMsg, true);
+                        }
+                        $('#user-input').show();
+                        $('#call-to-action').hide();
+                    }
+                }, 1000);
+            }
+
+            function showCTA(){
+                $('#user-input').hide();
+                $('#call-to-action').show();
+                $('#limit-text').text('Nadamo se da smo Vam pružili potrebne informacije. Kako želite da nastavite?');
+            }
+
             socket.onmessage = function(event) {
                 var data = JSON.parse(event.data);
 
-                if (!isHumanIntercepted && (data.agent_requested || isFirstResponse && data.exceeded_limit)) {
-                    $('#user-input').hide();
-                    $('#call-to-action').show();
-                    $('#send-button').prop('disabled', false);
-                    if (!isFirstResponse || !data.message) {
+                if (!isHumanIntercepted && (data.agent_requested || data.exceeded_limit)) {
+                    if (data.agent_requested) {
                         isHumanIntercepted = true;
-                        $('#messages .bot:last .bubble').remove();
-                        $('#call-agent-button').click();
-                        return;
+                    }
+                    showCTA();
+                    $('#send-button').prop('disabled', false);
+                    if (isFirstResponse || !data.message) {
+                        if (!data.message) {
+                            $('#messages .bot:last .bubble').remove();
+                        }
+                        if (data.global_limit) {
+                            startCountdown(data.remaining_secs);
+                        } else {
+                            $('.info-button').remove();
+                            $('#call-agent-button').click();
+                        }
                     }
                 }
 
-                if (!data.message) {
-                    return;
-                }
-
-                var message = data.message.replaceAll('\n', '<br>');
+                var message = data.message ? data.message.replaceAll('\n', '<br>') : '';
                 if (data.human_intercepted) {
                     isHumanIntercepted = true;
                 }
@@ -516,22 +566,27 @@
                     }
                 }
 
+                if (!$('#user-input').is(':visible')) {
+                    $('#call-to-action').hide();
+                    $('#user-input').show();
+                }
+
                 // If a human has intercepted the conversation, append a new message
                 if (isHumanIntercepted) {
-                    appendMessage(message, 'bot');
-                    if (!$('#user-input').is(':visible')) {
-                        $('#call-to-action').hide();
-                        $('#user-input').show();
+                    if (message || data.file) {
+                        appendMessage(message, 'bot', data.file);
                     }
                 } else {
                     // Otherwise, replace the last bot message
                     $('#messages .bot:last .bubble').html(message);
                     $('#messages').scrollTop($('#messages')[0].scrollHeight);
 
-                    // If the user has sent 5 messages, disable the input and show the call to action
+                    // If the user has exceeded limit of messages, disable the input and show the call to action
                     if (!isHumanIntercepted && data.exceeded_limit) {
-                        $('#user-input').hide();
-                        $('#call-to-action').show();
+                        showCTA();
+                        if (data.global_limit) {
+                            startCountdown(data.remaining_secs);
+                        }
                     }
 
                     // Enable the button
@@ -539,7 +594,7 @@
 
                     // If it is the first response, enable the info button
                     if (isFirstResponse) {
-                        $('#info-button').show();
+                        $('.info-button').show();
                         isFirstResponse = false;
                     }
                 }
@@ -593,6 +648,7 @@
             });
 
             $('#call-agent-button').on('click', function () {
+                clearInterval(countdownInterval);
                 $('#limit-text').hide();
                 $('#call-agent-button').hide();
                 // Get the current date and time in Macedonia
@@ -614,7 +670,7 @@
                     $('#call-agent-text').text('Prvi agent će vas kontaktirati u što kraćem roku...').addClass('alert-info').show();
                     if (!isHumanIntercepted) {
                         isHumanIntercepted = true;
-                        sendMessage('контактирам агент');
+                        sendMessage('Би сакал агент да ме контактира.');
                     }
                 } else {
                     // It's not a working time, show the alert message
@@ -647,6 +703,7 @@
 
             socket.onclose = function(event) {
                 console.log('Socket closed connection: ', event);
+                clearInterval(countdownInterval);
             };
 
             socket.onerror = function(error) {

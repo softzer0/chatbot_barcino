@@ -9,7 +9,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --upgrade pip
 RUN pip install -r requirements.txt
-RUN python -m spacy download mk_core_news_md
+#RUN python -m spacy download mk_core_news_md
 
 ENTRYPOINT ["/app/docker/entrypoint.sh"]
 CMD hypercorn ${ASGI_APPLICATION_PATH} --bind 0.0.0.0:8000 --reload

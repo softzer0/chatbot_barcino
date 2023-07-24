@@ -8,7 +8,7 @@ from django.shortcuts import render, redirect
 from django.views.decorators.csrf import ensure_csrf_cookie, csrf_exempt
 from django.views.decorators.http import require_http_methods
 
-from main.models import FileAttachment
+from main.models import ChatMessage, ChatSession
 
 
 def chat_view(request):
@@ -42,20 +42,28 @@ def panel_view(request):
 @csrf_exempt
 @require_http_methods(['POST'])
 def upload(request):
-    file = request.FILES['file']
-    attachment = FileAttachment(file=file)
-    attachment.save()
+    session = ChatSession.objects.get(pk=request.POST['session_id'])
+    message = request.POST['message']
 
-    # Get the channel layer
+    chat_message = ChatMessage(session=session, file=request.FILES['file'], message=None, response=message)
+    chat_message.save()
+
     channel_layer = get_channel_layer()
-
-    # Create a new message for the WebSocket
-    message = {
+    async_to_sync(channel_layer.group_send)(session.sid, {
         'type': 'file_uploaded',
-        'filename': attachment.file.name,
-    }
+        'command': 'file_uploaded',
+        'message': message,
+        'file': chat_message.file.name,
+    })
+    async_to_sync(channel_layer.group_send)('panel', {
+        'type': 'file_uploaded',
+        'command': 'file_uploaded',
+        'session_id': session.pk,
+        'message': {
+            'id': chat_message.id,
+            'response': message,
+            'file': chat_message.file.name,
+        }
+    })
 
-    # Use async_to_sync to send the message on the channel layer
-    async_to_sync(channel_layer.group_send)(request.POST['session_id'], message)
-
-    return JsonResponse({'filename': attachment.file.name})
+    return JsonResponse({'filename': chat_message.filename})

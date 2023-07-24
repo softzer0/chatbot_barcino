@@ -16,12 +16,12 @@ class Migration(migrations.Migration):
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
                 ('ip_address', models.GenericIPAddressField()),
-                ('latest_message_time', models.DateTimeField()),
+                ('latest_message_time', models.DateTimeField(blank=True, null=True)),
             ],
         ),
         migrations.AddField(
             model_name='chatsession',
             name='user_ip',
-            field=models.ForeignKey(null=True, on_delete=django.db.models.deletion.CASCADE, related_name='chat_sessions', to='main.userip'),
+            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='chat_sessions', to='main.userip'),
         ),
     ]
