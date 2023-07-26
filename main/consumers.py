@@ -139,22 +139,27 @@ class ChatConsumer(AsyncWebsocketConsumer):
             await self.send(text_data=json.dumps({'exceeded_limit': True, 'remaining_secs': remaining_secs, 'global_limit': global_limit}))
         return is_exceeded, message_count, user_ip, remaining_secs
 
-    async def receive(self, text_data=None, bytes_data=None):
+    async def create_session(self):
         from .models import ChatSession
+
+        message_count, user_ip, remaining_secs = await self.get_message_limit()
+
+        if self.session is None:
+            if not self.scope['session'].session_key:
+                await database_sync_to_async(self.scope['session'].save)()
+            self.session = await database_sync_to_async(ChatSession.objects.create)(sid=self.scope['session'].session_key, user_ip=user_ip)
+
+            self.group_name = self.scope['session'].session_key
+            await self.channel_layer.group_add(self.group_name, self.channel_name)
+
+        return message_count, user_ip, remaining_secs
+
+    async def receive(self, text_data=None, bytes_data=None):
         text_data_json = json.loads(text_data)
         command = text_data_json['command']
 
         if command == 'send_message':
-            message_count, user_ip, remaining_secs = await self.get_message_limit()
-
-            # Create session on the first message
-            if self.session is None:
-                if not self.scope['session'].session_key:
-                    await database_sync_to_async(self.scope['session'].save)()
-                self.session = await database_sync_to_async(ChatSession.objects.create)(sid=self.scope['session'].session_key, user_ip=user_ip)
-
-                self.group_name = self.scope['session'].session_key
-                await self.channel_layer.group_add(self.group_name, self.channel_name)
+            message_count, user_ip, remaining_secs = await self.create_session()
 
             message = text_data_json['message'][:100]
             if not self.session.is_human_intercepted and not self.session.agent_requested:
@@ -179,6 +184,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 await self.store_message(self.session, message, None)
 
         elif command == 'submit_info':
+            await self.create_session()
             await self.save_visitor_info(text_data_json['data'])
 
     @database_sync_to_async

@@ -202,6 +202,40 @@
             </div>
         </div>
 
+        <form id="initial-form" class="mt-3" style="display: none;">
+            <p class="mb-2">Ali pre svega, molim te da popuniš ovu formu kako bi znala dovoljno informacija:</p>
+            <div class="form-group row">
+                <label for="initial-place" class="col-sm-3 col-form-label col-form-label-sm" style="line-height: 1.5;">Destinacija</label>
+                <div class="col-sm-9">
+                    <input type="text" class="form-control form-control-sm" id="initial-place" required>
+                </div>
+            </div>
+            <div class="form-group row">
+                <label for="initial-adults" class="col-sm-3 col-form-label col-form-label-sm" style="line-height: 1.5;">Odrasli</label>
+                <div class="col-sm-3">
+                    <input type="number" class="form-control form-control-sm" id="initial-adults" min="1" required>
+                </div>
+                <label for="initial-children" class="col-sm-3 col-form-label col-form-label-sm" style="line-height: 1.5;">Deca</label>
+                <div class="col-sm-3">
+                    <input type="number" class="form-control form-control-sm" id="initial-children" min="0" required>
+                </div>
+            </div>
+            <div class="form-group row">
+                <label for="initial-dateFrom" class="col-sm-3 col-form-label col-form-label-sm" style="line-height: 1.5;">Datum od</label>
+                <div class="col-sm-3">
+                    <input type="date" class="form-control form-control-sm" id="initial-dateFrom" required>
+                </div>
+                <label for="initial-dateTo" class="col-sm-3 col-form-label col-form-label-sm" style="line-height: 1.5;">Datum do</label>
+                <div class="col-sm-3">
+                    <input type="date" class="form-control form-control-sm" id="initial-dateTo" required>
+                    <div class="invalid-feedback">
+                        <small>Datum do mora biti posle datuma od.</small>
+                    </div>
+                </div>
+            </div>
+            <button type="submit" class="btn btn-primary btn-sm mt-2">Potvrdi</button>
+        </form>
+
         <div id="user-input" class="input-group">
             <input id="m" type="text" class="form-control" placeholder="Unesite pitanje" autocomplete="off" maxlength="100" />
             <button id="send-button" disabled class="btn btn-primary input-group-append">
@@ -326,15 +360,71 @@
             var phoneRegex = /^[\s()+-/]*([0-9][\s()+-/]*){8,}$/;
             var countdownInterval;
 
+            function validateInput(selector, condition) {
+                var value = $(selector).val();
+                if (condition(value)) {
+                    $(selector).removeClass('is-invalid').addClass('is-valid');
+                } else {
+                    $(selector).removeClass('is-valid').addClass('is-invalid');
+                }
+            }
+
+            function validateDateTo(dateFromSelector, dateToSelector) {
+                var dateFrom = new Date($(dateFromSelector).val()).toISOString().slice(0,10);
+                var dateTo = new Date($(dateToSelector).val()).toISOString().slice(0,10);
+                validateInput(dateToSelector, function(val) { return new Date(val) > new Date(dateFrom); });
+                return { date_from: dateFrom, date_until: dateTo };
+            }
+
             socket.onopen = function(event) {
-                // Enable the button when connection is established
-                $('#send-button').prop('disabled', false);
                 console.log('Socket opened connection: ', event);
                 // Append a welcome message
                 $('#messages .bot:last .bubble').html(`
-                    <b>Zdravo, ja sam Milica, chatbot agent Barcino Travela.</b> Kako ti mogu pomoći?<br><br>
+                    <b>Zdravo, ja sam Milica, chatbot agent Barcino Travela.</b> Kako ti mogu pomoći?<br>
                     <small><i>Kako bih ti precizno dala odgovore, preporučujem da budeš što precizniji u definisanju pitanja.</i></small>
                 `);
+
+                // Append the form (initially hidden) to the message bubble
+                $('#messages .bot:last .bubble').append($('#initial-form'));
+                $('#initial-form').show();
+
+                $('#initial-form').on('submit', function(e) {
+                    e.preventDefault();
+                    var dates = validateDateTo('#initial-dateFrom', '#initial-dateTo');
+
+                    // If validation fails, stop execution
+                    if ($('.is-invalid').length) {
+                        return;
+                    }
+
+                    // Extract form values
+                    var place = $('#initial-place').val();
+                    var adults = $('#initial-adults').val();
+                    var children = $('#initial-children').val();
+
+                    // Store these in visitorInfo
+                    visitorInfo = {
+                        'arrangement': place,
+                        'adults': adults,
+                        'children': children,
+                        ...dates
+                    };
+
+                    // Send the visitor info to the server
+                    socket.send(JSON.stringify({
+                        'command': 'submit_info',
+                        'data': visitorInfo
+                    }));
+
+                    // Enable the send button
+                    $('#send-button').prop('disabled', false);
+
+                    // Hide the form
+                    $('#initial-form').hide();
+
+                    // Send the message
+                    sendMessage("Сакам да одам во " + place[0].toUpperCase() + place.slice(1) + (children > 0 ? " со моето семејство" : '') + '.');
+                });
             };
 
             appendMessage('', 'bot');
@@ -395,15 +485,6 @@
 
             $('#send-button').on('click', function() { sendMessage() });
 
-            function validateInput(selector, condition) {
-                var value = $(selector).val();
-                if (condition(value)) {
-                    $(selector).removeClass('is-invalid').addClass('is-valid');
-                } else {
-                    $(selector).removeClass('is-valid').addClass('is-invalid');
-                }
-            }
-
             $(document).ready(function() {
                 $('#visitor-info-form').on('submit', function(e) {
                     e.preventDefault();
@@ -413,7 +494,8 @@
                     var contact_phone = $('#contact-phone').val().trim();
 
                     validateInput('#contact-phone', function(val) { return phoneRegex.test(val); });
-                    validateInput('#dateTo', function(val) { return new Date(val) > new Date(dateFrom); });
+                    // Validate the date fields
+                    var dates = validateDateTo('#dateFrom', '#dateTo');
 
                     // If validation fails, stop execution
                     if ($('.is-invalid').length) {
@@ -424,8 +506,8 @@
                     var email = $('#email').val().trim();
                     var arrangement = $('#arrangement').val().trim();
                     var adults = $('#adults').val();
-                    var children = $('#children').val();
-                    var budget = $('#budget').val();
+                    var children = parseInt($('#children').val() || 0);
+                    var budget = parseInt($('#budget').val() || 0);
 
                     // Store these in visitorInfo
                     visitorInfo = {
@@ -436,8 +518,7 @@
                         'adults': adults,
                         'children': children,
                         'budget': budget,
-                        'date_from': dateFrom,
-                        'date_until': dateUntil
+                        ...dates
                         // Continue for all the other form fields
                     };
 
