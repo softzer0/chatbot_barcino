@@ -1,0 +1,28 @@
+version: '3.8'
+services:
+  django:
+    build:
+      context: ../..
+      dockerfile: docker/prod/Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../../media:/app/media
+    env_file: .env
+    depends_on:
+      - db
+      - redis
+  db:
+    image: postgres:15.3-alpine
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    env_file: .env
+  redis:
+    image: redis:7.0.10-alpine
+    command: redis-server
+    volumes:
+      - /var/lib/redis/data
+    ports:
+      - "6379:6379"
+volumes:
+  postgres_data:

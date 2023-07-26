@@ -1,0 +1,32 @@
+name: Deploy to staging
+
+on:
+  push:
+    branches:
+      - master
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connect via SSH to the server and apply the latest changes
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          command_timeout: 20m
+          script: |
+            set -e
+            cd ${{ vars.TARGET_DIR }}
+            git reset --hard HEAD~1
+            git pull
+            echo "Building new Docker image..."
+            cd docker/prod
+            docker-compose -f docker-compose.yml up --build --no-deps -d django
+            echo "Removing old Docker images..."
+            docker rmi -f $(docker images -f "dangling=true" -q)

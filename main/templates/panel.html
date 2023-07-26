@@ -236,7 +236,7 @@
 {% block extra_scripts %}
 <script>
     $(function () {
-        var socket = new WebSocket('ws://localhost:8000/ws/panel/'); // wss://625915672fce-3560674319287587178.ngrok-free.app
+        var socket = new WebSocket('{% if IS_HTTPS %}wss{% else %}ws{% endif %}://{{ HOSTNAME }}/ws/panel/');
         var activeSession = null;
         var pendingSessionMessages = {};
 

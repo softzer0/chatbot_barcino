@@ -1,5 +1,6 @@
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
+from django.conf import settings
 from django.contrib.auth import authenticate, login
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.forms import AuthenticationForm
@@ -12,7 +13,7 @@ from main.models import ChatMessage, ChatSession
 
 
 def chat_view(request):
-    return render(request, 'chat.html')
+    return render(request, 'chat.html', context={'HOSTNAME': settings.HOSTNAME, 'IS_HTTPS': settings.IS_HTTPS})
 
 
 @ensure_csrf_cookie
@@ -35,7 +36,7 @@ def login_view(request):
 
 @login_required
 def panel_view(request):
-    return render(request, 'panel.html')
+    return render(request, 'panel.html', context={'HOSTNAME': settings.HOSTNAME, 'IS_HTTPS': settings.IS_HTTPS})
 
 
 @login_required
