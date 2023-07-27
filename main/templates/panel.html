@@ -1,4 +1,4 @@
-{% extends "base_generic.html" %}
+{% extends "base_chat.html" %}
 
 {% block title %}Panel{% endblock %}
 
@@ -139,6 +139,11 @@
         display: inline-block;
         word-break: break-all;
     }
+
+    .badge.date {
+        padding: 1px;
+        color: lightsteelblue;
+    }
 </style>
 {% endblock %}
 
@@ -228,12 +233,14 @@
             <div class="badge question mb-1"></div>
             <div class="badge answer"></div>
             <div class="badge attachment d-none"></div>
+            <div class="badge date d-none"></div>
         </div>
     </div>
 </template>
 {% endblock %}
 
 {% block extra_scripts %}
+{{ block.super }}
 <script>
     $(function () {
         var socket = new WebSocket('{% if IS_HTTPS %}wss{% else %}ws{% endif %}://{{ HOSTNAME }}/ws/panel/');
@@ -355,6 +362,19 @@
                     attachment.html('<i class="fa fa-paperclip"></i> <a href="/media/' + message.file + '" target="_blank">' + filename + '</a>');
                     attachment.removeClass('d-none');
                 }
+                let date = card.find('.date');
+                let formattedDate;
+                let now = moment();
+                let messageDate = moment(message.created_at);
+                if (now.diff(messageDate, 'hours') >= 6) {
+                    formattedDate = messageDate.format('DD.MM.YYYY HH:mm');
+                } else {
+                    formattedDate = messageDate.fromNow();
+                    date.addClass('timeago'); // Add this class so that updateTimeAgo function can find this element
+                }
+                date.data('datetime', message.created_at); // Set the datetime data attribute
+                date.html('<i class="fa fa-clock"></i> <span class="timeago-text">' + formattedDate + '</span>');
+                date.removeClass('d-none');
             });
 
             // Scroll to bottom when a new message is appended
@@ -489,6 +509,9 @@
             // Clear the chat session before loading new messages
             enableInput();
             $('#chat-session').html('');
+            // Remove 'timeago' class from all date elements
+            $('.date').removeClass('timeago');
+            // Clear collected visitor info data
             $('#name').text('');
             $('#contact-phone').text('');
             $('#arrangement').text('');
@@ -499,6 +522,28 @@
             // Fetch the visitor info for the active session
             socket.send(JSON.stringify({ command: 'fetch_visitor_info', session_id: sessionId }));
         };
+
+        // This function will be called every few seconds
+        function updateTimeAgo() {
+            $('.timeago').each(function() {
+                var messageTime = $(this).data('datetime');
+                var now = moment();
+                var messageDate = moment(messageTime);
+                if (now.diff(messageDate, 'hours') < 6) {
+                    var newTimeAgo = moment(messageTime).fromNow();
+                    var currentTimeAgo = $(this).find('.timeago-text').text();
+                    if (newTimeAgo !== currentTimeAgo) {
+                        $(this).find('.timeago-text').text(newTimeAgo);
+                    }
+                }
+            });
+        }
+
+        // Call updateTimeAgo immediately when the page loads
+        updateTimeAgo();
+
+        // Then call updateTimeAgo every 5000 milliseconds (or 5 seconds)
+        setInterval(updateTimeAgo, 5000);
 
         function sendMessage() {
             if (activeSession) {

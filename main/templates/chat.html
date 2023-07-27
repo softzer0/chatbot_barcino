@@ -1,10 +1,8 @@
-{% extends "base_generic.html" %}
+{% extends "base_chat.html" %}
 
 {% block title %}Chat{% endblock %}
 
 {% block extra_styles %}
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.29.4/moment.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/moment-timezone/0.5.43/moment-timezone.min.js"></script>
     <style>
         body, html {
             height: 100%;
@@ -189,6 +187,10 @@
         #form-toast {
             z-index: 9999;
         }
+
+        #initial-form label {
+            line-height: 1.5;
+        }
     </style>
 {% endblock %}
 
@@ -202,30 +204,38 @@
             </div>
         </div>
 
-        <form id="initial-form" class="mt-3" style="display: none;">
+        <form id="initial-form" style="display: none;">
             <p class="mb-2">Ali pre svega, molim te da popuniš ovu formu kako bi znala dovoljno informacija:</p>
             <div class="form-group row">
-                <label for="initial-place" class="col-sm-3 col-form-label col-form-label-sm" style="line-height: 1.5;">Destinacija</label>
-                <div class="col-sm-9">
-                    <input type="text" class="form-control form-control-sm" id="initial-place" required>
+                <label for="place" class="col-form-label col-form-label-sm col-sm-1">Mesto</label>
+                <div class="col-sm-3">
+                    <input type="text" class="form-control form-control-sm" id="place" required>
+                </div>
+                <label for="region" class="col-form-label col-form-label-sm col-sm-1">Region</label>
+                <div class="col-sm-3">
+                    <input type="text" class="form-control form-control-sm" id="region">
+                </div>
+                <label for="country" class="col-form-label col-form-label-sm col-sm-1">Zemlja</label>
+                <div class="col-sm-3">
+                    <input type="text" class="form-control form-control-sm" id="country" value="Grčka" disabled>
                 </div>
             </div>
             <div class="form-group row">
-                <label for="initial-adults" class="col-sm-3 col-form-label col-form-label-sm" style="line-height: 1.5;">Odrasli</label>
+                <label for="initial-adults" class="col-sm-1 col-form-label col-form-label-sm">Odrasli</label>
                 <div class="col-sm-3">
                     <input type="number" class="form-control form-control-sm" id="initial-adults" min="1" required>
                 </div>
-                <label for="initial-children" class="col-sm-3 col-form-label col-form-label-sm" style="line-height: 1.5;">Deca</label>
+                <label for="initial-children" class="col-sm-1 col-form-label col-form-label-sm">Deca</label>
                 <div class="col-sm-3">
                     <input type="number" class="form-control form-control-sm" id="initial-children" min="0" required>
                 </div>
             </div>
             <div class="form-group row">
-                <label for="initial-dateFrom" class="col-sm-3 col-form-label col-form-label-sm" style="line-height: 1.5;">Datum od</label>
+                <label for="initial-dateFrom" class="col-sm-1 col-form-label col-form-label-sm text-nowrap">Datum od</label>
                 <div class="col-sm-3">
                     <input type="date" class="form-control form-control-sm" id="initial-dateFrom" required>
                 </div>
-                <label for="initial-dateTo" class="col-sm-3 col-form-label col-form-label-sm" style="line-height: 1.5;">Datum do</label>
+                <label for="initial-dateTo" class="col-sm-1 col-form-label col-form-label-sm text-nowrap">Datum do</label>
                 <div class="col-sm-3">
                     <input type="date" class="form-control form-control-sm" id="initial-dateTo" required>
                     <div class="invalid-feedback">
@@ -233,7 +243,7 @@
                     </div>
                 </div>
             </div>
-            <button type="submit" class="btn btn-primary btn-sm mt-2">Potvrdi</button>
+            <button type="submit" class="btn btn-primary btn-sm mt-2" id="initial-confirm">Potvrdi</button>
         </form>
 
         <div id="user-input" class="input-group">
@@ -294,11 +304,11 @@
                             <label for="arrangement" class="form-label">Aranžman</label>
                             <input type="text" class="form-control" id="arrangement" required>
                         </div>
-                        <div class="mb-3">
+                        <div class="mb-3 d-none">
                             <label for="adults" class="form-label">Broj odraslih osoba</label>
                             <input type="number" class="form-control" id="adults" min="1" required>
                         </div>
-                        <div class="mb-3">
+                        <div class="mb-3 d-none">
                             <label for="children" class="form-label">Broj dece</label>
                             <input type="number" class="form-control" min="0" id="children">
                         </div>
@@ -309,11 +319,11 @@
                                 <span class="input-group-text">€</span>
                             </div>
                         </div>
-                        <div class="mb-3">
+                        <div class="mb-3 d-none">
                             <label for="dateFrom" class="form-label">Datum od</label>
                             <input type="date" class="form-control" id="dateFrom" required>
                         </div>
-                        <div class="mb-3">
+                        <div class="mb-3 d-none">
                             <label for="dateTo" class="form-label">Datum do</label>
                             <input type="date" class="form-control" id="dateTo" required>
                             <div class="invalid-feedback">
@@ -348,7 +358,10 @@
 {% endblock %}
 
 {% block extra_scripts %}
+    {{ block.super }}
     <script>
+        var SHOW_INITIAL_FORM = true;
+
         $(function () {
             var socket = new WebSocket('{% if IS_HTTPS %}wss{% else %}ws{% endif %}://{{ HOSTNAME }}/ws/chat/');
             var visitorInfo = {};
@@ -376,6 +389,10 @@
                 return { date_from: dateFrom, date_until: dateTo };
             }
 
+            function capitalizeStr(str){
+                return str.replace(/(^\w|\s\w)/g, m => m.toUpperCase());
+            }
+
             socket.onopen = function(event) {
                 console.log('Socket opened connection: ', event);
                 // Append a welcome message
@@ -384,47 +401,55 @@
                     <small><i>Kako bih ti precizno dala odgovore, preporučujem da budeš što precizniji u definisanju pitanja.</i></small>
                 `);
 
-                // Append the form (initially hidden) to the message bubble
-                $('#messages .bot:last .bubble').append($('#initial-form'));
-                $('#initial-form').show();
+                if (SHOW_INITIAL_FORM) {
+                    // Append the form (initially hidden) to the message bubble
+                    var messageElement = $('<div>').addClass('message bot');
+                    var bubbleElement = $('<div>').addClass('bubble').append($('#initial-form'));
+                    messageElement.append(bubbleElement);
+                    $('#messages').append(messageElement);
+                    $('#initial-form').show();
 
-                $('#initial-form').on('submit', function(e) {
-                    e.preventDefault();
-                    var dates = validateDateTo('#initial-dateFrom', '#initial-dateTo');
+                    $('#initial-form').on('submit', function (e) {
+                        e.preventDefault();
+                        var dates = validateDateTo('#initial-dateFrom', '#initial-dateTo');
 
-                    // If validation fails, stop execution
-                    if ($('.is-invalid').length) {
-                        return;
-                    }
+                        // If validation fails, stop execution
+                        if ($('.is-invalid').length) {
+                            return;
+                        }
 
-                    // Extract form values
-                    var place = $('#initial-place').val();
-                    var adults = $('#initial-adults').val();
-                    var children = $('#initial-children').val();
+                        // Extract form values
+                        var region = $('#region').val();
+                        var place = capitalizeStr($('#place').val()) + ', ' + (region ? capitalizeStr(region) + ', ' : '') + $('#country').val();
+                        var adults = $('#initial-adults').val();
+                        var children = $('#initial-children').val();
 
-                    // Store these in visitorInfo
-                    visitorInfo = {
-                        'arrangement': place,
-                        'adults': adults,
-                        'children': children,
-                        ...dates
-                    };
+                        // Store these in visitorInfo
+                        visitorInfo = {
+                            'arrangement': place,
+                            'adults': adults,
+                            'children': children,
+                            ...dates
+                        };
 
-                    // Send the visitor info to the server
-                    socket.send(JSON.stringify({
-                        'command': 'submit_info',
-                        'data': visitorInfo
-                    }));
+                        // Send the visitor info to the server
+                        socket.send(JSON.stringify({
+                            'command': 'submit_info',
+                            'data': visitorInfo
+                        }));
 
-                    // Enable the send button
+                        // Enable the send button
+                        $('#send-button').prop('disabled', false);
+
+                        // Hide the form
+                        messageElement.hide();
+
+                        // Send the message
+                        sendMessage("Сакам да одам во " + place + (children > 0 ? " со моето семејство" : '') + '.');
+                    });
+                } else {
                     $('#send-button').prop('disabled', false);
-
-                    // Hide the form
-                    $('#initial-form').hide();
-
-                    // Send the message
-                    sendMessage("Сакам да одам во " + place[0].toUpperCase() + place.slice(1) + (children > 0 ? " со моето семејство" : '') + '.');
-                });
+                }
             };
 
             appendMessage('', 'bot');
@@ -489,8 +514,6 @@
                 $('#visitor-info-form').on('submit', function(e) {
                     e.preventDefault();
 
-                    var dateFrom = new Date($('#dateFrom').val()).toISOString().slice(0,10);
-                    var dateUntil = new Date($('#dateTo').val()).toISOString().slice(0,10);
                     var contact_phone = $('#contact-phone').val().trim();
 
                     validateInput('#contact-phone', function(val) { return phoneRegex.test(val); });
@@ -560,9 +583,16 @@
                     $('#limit-text').text('Molimo sačekajte ' + seconds + ' sekundi.');
                     if (seconds <= 0) {
                         clearInterval(countdownInterval);
-                        var lastUserMsg = $('#messages .user:last .bubble').text();
-                        if (lastUserMsg) {
-                            sendMessage(lastUserMsg, true);
+                        if (!isFirstResponse) {
+                            var lastUserMsg = $('#messages .user:last .bubble').text();
+                            if (lastUserMsg) {
+                                sendMessage(lastUserMsg, true);
+                            } else {
+                                $('#send-button').prop('disabled', false);
+                            }
+                        } else {
+                            $('#send-button').prop('disabled', true);
+                            $('#initial-confirm').prop('disabled', false);
                         }
                         $('#user-input').show();
                         $('#call-to-action').hide();
@@ -584,22 +614,27 @@
                         isHumanIntercepted = true;
                     }
                     showCTA();
-                    $('#send-button').prop('disabled', false);
                     if (isFirstResponse || !data.message) {
                         if (!data.message) {
-                            $('#messages .bot:last .bubble').remove();
+                            if (isFirstResponse && !data.global_limit) {
+                                $('#messages .bot .bubble').remove();
+                                $('.info-button').remove();
+                                $('#call-agent-button').click();
+                            } else if (!isFirstResponse || !data.global_limit) {
+                                $('#messages .bot:last .bubble').remove();
+                            }
                         }
                         if (data.global_limit) {
-                            startCountdown(data.remaining_secs);
-                        } else {
-                            $('.info-button').remove();
-                            $('#call-agent-button').click();
+                            if (isFirstResponse) {
+                                $('#initial-confirm').prop('disabled', true);
+                            }
+                            return startCountdown(data.remaining_secs);
                         }
                     }
                 }
 
                 var message = data.message ? data.message.replaceAll('\n', '<br>') : '';
-                if (data.human_intercepted) {
+                if (data.human_intercepted || data.file) {
                     isHumanIntercepted = true;
                 }
 
@@ -647,9 +682,10 @@
                     }
                 }
 
-                if (!$('#user-input').is(':visible')) {
+                if (!data.agent_requested && !data.exceeded_limit && !$('#user-input').is(':visible')) {
                     $('#call-to-action').hide();
                     $('#user-input').show();
+                    $('#send-button').prop('disabled', false);
                 }
 
                 // If a human has intercepted the conversation, append a new message
@@ -733,7 +769,7 @@
                 $('#limit-text').hide();
                 $('#call-agent-button').hide();
                 // Get the current date and time in Macedonia
-                var now = moment().tz("Europe/Skopje");
+                var now = moment().tz("Europe/Belgrade");
 
                 // Get the current day of the week (0 for Sunday, 1 for Monday, ..., 6 for Saturday)
                 var dayOfWeek = now.day();

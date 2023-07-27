@@ -1,53 +1,66 @@
 import os
 import pickle
 import re
+import traceback
 
 import requests
 from bs4 import BeautifulSoup
 from channels.db import database_sync_to_async
 from langchain.callbacks import get_openai_callback
+from langchain.prompts import ChatPromptTemplate, SystemMessagePromptTemplate, HumanMessagePromptTemplate
+# from langchain.retrievers import SVMRetriever
+from langchain.schema import HumanMessage
 from langchain.vectorstores import Chroma
 from langchain.embeddings import OpenAIEmbeddings
-from langchain.text_splitter import SpacyTextSplitter, RecursiveCharacterTextSplitter
+from langchain.text_splitter import RecursiveCharacterTextSplitter # , SpacyTextSplitter
 from langchain.chat_models import ChatOpenAI
-from langchain.chains import RetrievalQA
+from langchain.chains import RetrievalQA, create_qa_with_structure_chain, StuffDocumentsChain
 from langchain import PromptTemplate
 
 from django.conf import settings
 
+from main.schema import CustomResponseSchema
 
-PRE_SPLITTED_TEXTS_PATH = os.path.join(settings.MEDIA_ROOT, 'documents/texts.pkl')
-TEXTS_PATH = os.path.join(settings.MEDIA_ROOT, 'documents/texts_splitted.pkl')
+PRE_SPLITTED_TEXTS_PATH = settings.MEDIA_ROOT / 'documents/texts.pkl'
+TEXTS_PATH = settings.MEDIA_ROOT / 'documents/texts_splitted.pkl'
 
 
 class Genie:
-    vectordb = None
-    sales_prompt = None
+    genie = None
 
     def __init__(self, documents):
-        self.documents = documents
-        if Genie.vectordb is None:
+        if Genie.genie is None:
+            self.documents = documents
             self.texts = self.load_texts()
-            Genie.vectordb = self.embeddings(self.texts)
-        if Genie.sales_prompt is None:
-            sales_template = open(os.path.join(settings.MEDIA_ROOT, 'prompt.txt'), 'r').read()
-            self.sales_prompt = PromptTemplate(
-                template=sales_template, input_variables=["context", "question"]
+            vectordb = self.embeddings(self.texts)
+            prompt_messages = [
+                SystemMessagePromptTemplate.from_template_file(settings.MEDIA_ROOT / 'prompt.txt', []),
+                HumanMessage(content="Answer question using the following context"),
+                HumanMessagePromptTemplate.from_template("{context}"),
+                HumanMessagePromptTemplate.from_template("Question: {question}"),
+            ]
+            chain_prompt = ChatPromptTemplate(messages=prompt_messages)
+            llm = ChatOpenAI(temperature=0, model="gpt-3.5-turbo-0613")
+            qa_chain = create_qa_with_structure_chain(llm, CustomResponseSchema, output_parser="pydantic", prompt=chain_prompt)
+            document_prompt = PromptTemplate(
+                input_variables=["page_content"],
+                template="{page_content}"
             )
-        self.genie = RetrievalQA.from_chain_type(
-            llm=ChatOpenAI(model_name="gpt-3.5-turbo", temperature=0),
-            chain_type="stuff",
-            retriever=Genie.vectordb.as_retriever(),
-            return_source_documents=False,
-            chain_type_kwargs={"prompt": self.sales_prompt},
-        )
+            final_qa_chain = StuffDocumentsChain(
+                llm_chain=qa_chain,
+                document_variable_name="context",
+                document_prompt=document_prompt,
+            )
+            Genie.genie = RetrievalQA(
+                retriever=vectordb.as_retriever(), combine_documents_chain=final_qa_chain
+            )
 
     def load_texts(self):
         if os.path.exists(TEXTS_PATH):
             with open(TEXTS_PATH, 'rb') as f:
                 return pickle.load(f)
         else:
-            text_splitter = SpacyTextSplitter(chunk_size=1615, chunk_overlap=310, pipeline='sentencizer', separator='\.')
+            text_splitter = RecursiveCharacterTextSplitter(chunk_size=1600, chunk_overlap=350, separators=['\n', '\.'])
             pre_splitted_texts = []
             texts = []
             for document in self.documents:
@@ -64,32 +77,24 @@ class Genie:
     def embeddings(texts):
         embeddings = OpenAIEmbeddings()
         vectordb = Chroma.from_documents(texts, embeddings, persist_directory=os.path.join(settings.MEDIA_ROOT, 'chroma'))
+        vectordb.persist()
         return vectordb
 
     @database_sync_to_async
     def replace_links(self, resp):
         from .models import LINK_PLACEHOLDER, LINK_REGEX, Link
-        link_ids = [int(id) for id in re.findall(LINK_REGEX, resp)]
+        link_ids = [int(id) for id in re.findall(LINK_REGEX, resp.answer)]
         links = Link.objects.filter(id__in=link_ids)
         for link in links:
-            resp = resp.replace(LINK_PLACEHOLDER % link.pk, link.url)
+            resp.answer = resp.answer.replace(LINK_PLACEHOLDER % link.pk, link.url)
         return resp
 
     @database_sync_to_async
-    def find_imgs(self, resp):
+    def find_imgs(self, lst):
         from main.models import LINK_REGEX, Link
         with open(PRE_SPLITTED_TEXTS_PATH, 'rb') as f:
             texts = pickle.load(f)
 
-        try:
-            resp = resp.split("List of names of residencies in answer:\n")[1]
-            if not resp.split('\n')[0]:
-                resp = resp.split('\n')[1]
-            else:
-                resp = resp.split('\n')[0]
-            lst = resp.split(', ')
-        except:
-            return
         imgs = []
         link_ids = {}
 
@@ -160,6 +165,14 @@ class Genie:
 
     async def ask(self, query: str):
         with get_openai_callback() as cb:
-            resp = self.genie.run(query)
+            try:
+                resp = self.genie.run(query)
+            except Exception as e:
+                print(f"Exception occurred: {e}")
+                traceback.print_exc()  # This prints the stack trace
+                resp = CustomResponseSchema(
+                    residencies=[],
+                    answer="Dogodila se greška. Molimo pokušajte ponovo.",
+                )
             print(cb)
-            return await self.replace_links(resp)
+            return await self.replace_links(resp), cb.total_tokens

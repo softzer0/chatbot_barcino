@@ -43,7 +43,7 @@ You would need some Debian/Ubuntu distribution for the following:
     ```bash
     ssh-add ~/.ssh/id_ed25519
     ```
-   Now your host is ready for GitHub Actions. You can now clone this repository:
+   Now your host is ready for GitHub Actions. Next, clone this repository:
    ```bash
    git clone git@github.com:softzer0/chatbot.git
    ```

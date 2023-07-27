@@ -10,7 +10,7 @@ from django.db.models import F
 from django.utils import timezone
 from nltk import ngrams
 
-from .redis_init import redis_conn
+from .redis_init import lua_script
 from chatbot.utils import DateTimeEncoder
 from .genie import Genie
 
@@ -26,16 +26,15 @@ contact_keywords = 'kontaktiram kontaktiraj kontakt kontaktirajte kontaktira'\
                    ' зборувам зборувај зборување зборувајте зборува'\
                    ' типкам типкај типкање типкајте типка'\
                    ' пишувам пишувај пишување пишувајте пишува'\
-                   ' прашам прашај прашање прашајте праша'
+                   ' прашам прашај прашање прашајте праша'.split(' ')
 agent_keywords = 'agenta agent agenti agentom'\
                  ' operator operatori operatorot'\
                  ' covek covekot čovek čovekot'\
                  ' агента агент агенти агентом'\
                  ' оператор оператори операторот'\
-                 ' човек човекот'
+                 ' човек човекот'.split(' ')
 
-def calculate_trigram_similarity(message, keywords):
-    keywords_list = keywords.split(' ')
+def calculate_trigram_similarity(message, keywords_list):
     scores = []
     for keyword in keywords_list:
         trigrams_message = Counter(ngrams(message, 3))
@@ -51,7 +50,6 @@ def calculate_trigram_similarity(message, keywords):
 
 MESSAGE_LIMIT_PER_IP = 5
 TIME_LIMIT_PER_IP = timedelta(hours=1)
-GLOBAL_MESSAGE_LIMIT_PER_MINUTE = 25
 
 class ChatConsumer(AsyncWebsocketConsumer):
     async def connect(self):
@@ -75,28 +73,10 @@ class ChatConsumer(AsyncWebsocketConsumer):
             self.session.save()
 
     @staticmethod
-    async def get_global_msg_limit(update=True):
-        current_minute = datetime.now().replace(second=0, microsecond=0)
-        key = f"messages:{current_minute}"
-        count = redis_conn.get(key)
-
-        # If the key doesn't exist, initialize it
-        if count is None:
-            if update:
-                redis_conn.set(key, 1)
-                # Set the key to expire after 1 minute
-                redis_conn.expireat(key, current_minute + timedelta(minutes=1))
-            return False, 0
-
-        count = int(count)
-        # If the count exceeds the limit
-        if count >= GLOBAL_MESSAGE_LIMIT_PER_MINUTE:
-            ttl = redis_conn.ttl(key)
-            return True, ttl
-
-        # Otherwise, increment the count if update is True
-        if update:
-            redis_conn.incr(key)
+    async def get_global_token_limit(tokens=0, update=True):
+        remaining_secs = lua_script(args=[str(update).lower(), tokens])
+        if remaining_secs > 0:
+            return True, remaining_secs
         return False, 0
 
     @database_sync_to_async
@@ -128,11 +108,11 @@ class ChatConsumer(AsyncWebsocketConsumer):
         is_exceeded = False
         if message_count >= MESSAGE_LIMIT_PER_IP:
             is_exceeded = True
-            if update_time:
-                await self.update_last_message_time(user_ip)
+        if update_time:
+            await self.update_last_message_time(user_ip)
         global_limit = False
         if not is_exceeded:
-            is_exceeded, remaining_secs = await self.get_global_msg_limit(update_time)
+            is_exceeded, remaining_secs = await self.get_global_token_limit(update=False)
             if is_exceeded:
                 global_limit = True
         if is_exceeded:
@@ -171,11 +151,12 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 else:
                     is_exceeded_msg_limit = (await self.handle_exceeded_msg_limit(message_count, user_ip, remaining_secs, True))[0]
                     if not is_exceeded_msg_limit:
-                        response = await self.genie.ask(message)
-                        imgs = await self.genie.find_imgs(response)
-                        await self.store_message(self.session, message, response)
+                        response, total_tokens = await self.genie.ask(message)
+                        await self.get_global_token_limit(total_tokens, True)
+                        imgs = await self.genie.find_imgs(response.residencies)
+                        await self.store_message(self.session, message, response.answer)
                         await self.send(text_data=json.dumps({
-                            'message': response.split("Answer to the visitor:\n")[1],
+                            'message': response.answer,
                             'exceeded_limit': message_count + 1 == MESSAGE_LIMIT_PER_IP,
                             'remaining_secs': remaining_secs,
                             'imgs': imgs
