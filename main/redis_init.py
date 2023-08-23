@@ -1,7 +1,7 @@
 import os
 import redis
 
-redis_conn = redis.Redis(host=os.environ.get('REDIS_HOST'), port=int(os.environ.get('REDIS_PORT')), db=0)
+redis_conn = redis.Redis(host=os.environ.get('REDIS_HOST'), port=int(os.environ.get('REDIS_PORT')), db=int(os.environ.get('REDIS_DB')))
 
 GLOBAL_TOKEN_LIMIT_PER_MINUTE = 90000
 # Define the Lua script

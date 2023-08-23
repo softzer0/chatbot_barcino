@@ -48,3 +48,9 @@ You would need some Debian/Ubuntu distribution for the following:
    git clone git@github.com:softzer0/chatbot.git
    ```
 8. You can proceed to execute `docker/dev/prod/setup.sh` and it will install and setup Nginx with running project in Docker.
+9. And to finally make GitHub Action from this repository work, go to the settings for the repository, then to Secrets and variables -> Actions, and set these as secrets:
+   * `HOST` - IP of your host
+   * `USER` - username which GitHub Action should use when accessing the host
+   * `SSH_PRIVATE_KEY` - this needs to contain the content of your SSH private key (`~/.ssh/id_ed25519`)
+
+   Also, set `TARGET_DIR` in variables which represents the full path on the host to the cloned repository.
